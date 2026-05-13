@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Photoshop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">MINI<span>PS</span></div>
+    <nav class="toolbar">
+      <label class="btn-primary" id="upload-label">
+        <input type="file" id="file-input" accept="image/*" hidden />
+        ⊕ Buka Gambar
+      </label>
+      <button class="btn-ghost" id="btn-reset">↺ Reset</button>
+      <button class="btn-ghost btn-danger" id="btn-clear">✕ Hapus</button>
+      <a class="btn-ghost" id="btn-download" href="/api/download" download="result.png">↓ Unduh</a>
+    </nav>
+  </header>
+
+  <!-- Main Layout -->
+  <main>
+    <!-- Canvas Area -->
+    <section class="canvas-area">
+      <div class="panel" id="panel-before">
+        <span class="panel-label">BEFORE</span>
+        <!-- panel-img-wrap bisa diklik untuk buka gambar -->
+        <div class="panel-img-wrap clickable" id="before-wrap">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-icon">⬡</div>
+            <p>Klik di sini untuk<br/>membuka gambar</p>
+          </div>
+          <img id="img-before" alt="" />
+        </div>
+      </div>
+
+      <div class="divider">
+        <div class="divider-line"></div>
+        <div class="divider-dot"></div>
+        <div class="divider-line"></div>
+      </div>
+
+      <div class="panel" id="panel-after">
+        <span class="panel-label">AFTER</span>
+        <div class="panel-img-wrap">
+          <img id="img-after" alt="" />
+          <div class="loading-overlay" id="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controls -->
+    <aside class="controls">
+      <div class="controls-header">
+        <span class="controls-title">Enhancement</span>
+        <span class="info-badge" id="img-info">—</span>
+      </div>
+
+      <div class="control-group">
+        <div class="group-label">TONE</div>
+        <div class="slider-row">
+          <label>Brightness</label>
+          <div class="slider-wrap">
+            <input type="range" id="s-brightness" min="0" max="200" value="100" />
+            <span class="slider-val" id="v-brightness">100</span>
+          </div>
+        </div>
+        <div class="slider-row">
+          <label>Contrast</label>
+          <div class="slider-wrap">
+            <input type="range" id="s-contrast" min="0" max="200" value="100" />
+            <span class="slider-val" id="v-contrast">100</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="group-label">DETAIL</div>
+        <div class="slider-row">
+          <label>Sharpen</label>
+          <div class="slider-wrap">
+            <input type="range" id="s-sharpen" min="100" max="500" value="100" />
+            <span class="slider-val" id="v-sharpen">100</span>
+          </div>
+        </div>
+        <div class="slider-row">
+          <label>Blur</label>
+          <div class="slider-wrap">
+            <input type="range" id="s-blur" min="0" max="20" value="0" />
+            <span class="slider-val" id="v-blur">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-group">
+        <button class="btn-apply" id="btn-apply">✓ Terapkan</button>
+        <button class="btn-secondary" id="btn-histeq">⊞ Histogram EQ</button>
+        <button class="btn-ghost-sm" id="btn-reset-sliders">↺ Reset Slider</button>
+      </div>
+
+      <div class="status-bar" id="status-bar">Siap.</div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
