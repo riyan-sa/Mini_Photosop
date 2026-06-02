@@ -3,113 +3,367 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mini Photoshop</title>
+  <title>MiniPS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
 
-  <!-- Header -->
+  <!-- HEADER -->
   <header>
-    <div class="logo">MINI<span>PS</span></div>
+    <div class="logo">
+      <div class="logo-dots">
+        <div class="logo-dot r"></div>
+        <div class="logo-dot y"></div>
+        <div class="logo-dot g"></div>
+      </div>
+      <div class="logo-text">MINI<span>PS</span></div>
+    </div>
     <nav class="toolbar">
-      <label class="btn-primary" id="upload-label">
+      <label class="btn-primary">
         <input type="file" id="file-input" accept="image/*" hidden />
-        ⊕ Buka Gambar
+        ⊕ Buka
       </label>
+      <button class="btn-ghost" id="btn-undo">↩ Undo</button>
       <button class="btn-ghost" id="btn-reset">↺ Reset</button>
       <button class="btn-ghost btn-danger" id="btn-clear">✕ Hapus</button>
       <a class="btn-ghost" id="btn-download" href="/api/download" download="result.png">↓ Unduh</a>
     </nav>
   </header>
 
-  <!-- Main Layout -->
+  <!-- MAIN -->
   <main>
-    <!-- Canvas Area -->
+
+    <!-- LEFT: Canvas panels -->
     <section class="canvas-area">
-      <div class="panel" id="panel-before">
-        <span class="panel-label">BEFORE</span>
-        <!-- panel-img-wrap bisa diklik untuk buka gambar -->
+
+      <!-- BEFORE -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-label">BEFORE</span>
+          <span class="panel-dim" id="img-info">—</span>
+        </div>
         <div class="panel-img-wrap clickable" id="before-wrap">
           <div class="empty-state" id="empty-state">
-            <div class="empty-icon">⬡</div>
-            <p>Klik di sini untuk<br/>membuka gambar</p>
+            <div class="empty-icon">🌆</div>
+            <p>[ KLIK UNTUK LOAD GAMBAR ]</p>
           </div>
           <img id="img-before" alt="" />
         </div>
       </div>
 
-      <div class="divider">
-        <div class="divider-line"></div>
-        <div class="divider-dot"></div>
-        <div class="divider-line"></div>
-      </div>
+      <div class="divider-dot-v"></div>
 
-      <div class="panel" id="panel-after">
-        <span class="panel-label">AFTER</span>
-        <div class="panel-img-wrap">
+      <!-- AFTER -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-label" id="after-label">AFTER</span>
+        </div>
+        <div class="panel-img-wrap" id="after-wrap">
           <img id="img-after" alt="" />
+          <!-- Crop overlay -->
+          <div id="crop-overlay" class="crop-overlay" hidden>
+            <div id="crop-mask-top"    class="crop-mask"></div>
+            <div id="crop-mask-left"   class="crop-mask"></div>
+            <div id="crop-mask-right"  class="crop-mask"></div>
+            <div id="crop-mask-bottom" class="crop-mask"></div>
+            <div id="crop-box" class="crop-box">
+              <div class="crop-handle" data-pos="tl"></div>
+              <div class="crop-handle" data-pos="tr"></div>
+              <div class="crop-handle" data-pos="bl"></div>
+              <div class="crop-handle" data-pos="br"></div>
+              <div class="crop-handle" data-pos="t"></div>
+              <div class="crop-handle" data-pos="b"></div>
+              <div class="crop-handle" data-pos="l"></div>
+              <div class="crop-handle" data-pos="r"></div>
+            </div>
+          </div>
+          <!-- Resize overlay -->
+          <div id="resize-overlay" class="resize-overlay" hidden>
+            <div class="resize-handle" data-pos="r"></div>
+            <div class="resize-handle" data-pos="b"></div>
+            <div class="resize-handle" data-pos="br"></div>
+          </div>
           <div class="loading-overlay" id="loading">
             <div class="spinner"></div>
           </div>
         </div>
       </div>
+
     </section>
 
-    <!-- Controls -->
+    <!-- RIGHT: Controls -->
     <aside class="controls">
-      <div class="controls-header">
-        <span class="controls-title">Enhancement</span>
-        <span class="info-badge" id="img-info">—</span>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="enhancement">Enhancement</button>
+        <button class="tab" data-tab="geometric">Geometric</button>
+        <button class="tab" data-tab="restoration">Restoration</button>
       </div>
 
-      <div class="control-group">
-        <div class="group-label">TONE</div>
-        <div class="slider-row">
-          <label>Brightness</label>
-          <div class="slider-wrap">
-            <input type="range" id="s-brightness" min="0" max="200" value="100" />
-            <span class="slider-val" id="v-brightness">100</span>
+      <!-- ══ ENHANCEMENT TAB ══ -->
+      <div class="tab-content active" id="tab-enhancement">
+
+        <div class="control-group">
+          <div class="group-label">TONE</div>
+          <div class="slider-row">
+            <label>Brightness</label>
+            <div class="slider-wrap">
+              <input type="range" id="s-brightness" min="0" max="200" value="100" />
+              <span class="slider-val" id="v-brightness">100</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label>Contrast</label>
+            <div class="slider-wrap">
+              <input type="range" id="s-contrast" min="0" max="200" value="100" />
+              <span class="slider-val" id="v-contrast">100</span>
+            </div>
           </div>
         </div>
-        <div class="slider-row">
-          <label>Contrast</label>
-          <div class="slider-wrap">
-            <input type="range" id="s-contrast" min="0" max="200" value="100" />
-            <span class="slider-val" id="v-contrast">100</span>
+
+        <div class="control-group">
+          <div class="group-label">DETAIL</div>
+          <div class="slider-row">
+            <label>Sharpen</label>
+            <div class="slider-wrap">
+              <input type="range" id="s-sharpen" min="100" max="500" value="100" />
+              <span class="slider-val" id="v-sharpen">100</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <label>Blur</label>
+            <div class="slider-wrap">
+              <input type="range" id="s-blur" min="0" max="20" value="0" />
+              <span class="slider-val" id="v-blur">0</span>
+            </div>
           </div>
         </div>
+
+        <div class="action-group">
+          <button class="btn-apply" id="btn-apply">✓ Terapkan</button>
+          <button class="btn-secondary" id="btn-histeq">⊞ Histogram EQ</button>
+          <button class="btn-ghost-sm" id="btn-reset-sliders">↺ Reset Slider</button>
+        </div>
+
       </div>
 
-      <div class="control-group">
-        <div class="group-label">DETAIL</div>
-        <div class="slider-row">
-          <label>Sharpen</label>
-          <div class="slider-wrap">
-            <input type="range" id="s-sharpen" min="100" max="500" value="100" />
-            <span class="slider-val" id="v-sharpen">100</span>
+      <!-- ══ GEOMETRIC TAB ══ -->
+      <div class="tab-content" id="tab-geometric">
+
+        <div class="control-group">
+          <div class="group-label">ROTATE</div>
+          <div class="slider-row">
+            <label>Angle</label>
+            <div class="slider-wrap">
+              <input type="range" id="s-rotate" min="0" max="360" value="0" />
+              <span class="slider-val" id="v-rotate">0°</span>
+            </div>
+          </div>
+          <button class="btn-ghost-sm" id="btn-rotate-reset">↺ Reset</button>
+        </div>
+
+        <div class="control-group">
+          <div class="group-label">FLIP</div>
+          <div class="btn-pair">
+            <button class="btn-secondary" id="btn-flip-h">⇔ Horizontal</button>
+            <button class="btn-secondary" id="btn-flip-v">⇕ Vertikal</button>
           </div>
         </div>
-        <div class="slider-row">
-          <label>Blur</label>
-          <div class="slider-wrap">
-            <input type="range" id="s-blur" min="0" max="20" value="0" />
-            <span class="slider-val" id="v-blur">0</span>
+
+        <div class="control-group">
+          <div class="group-label">SCALE</div>
+          <div class="slider-row">
+            <label>Scale</label>
+            <div class="slider-wrap">
+              <input type="range" id="s-scale" min="10" max="1000" value="100" /><span class="slider-val" id="v-scale">100%</span>
+              <input type="number" id="n-scale" min="10" max="2000" value="100" class="val-input" />
+              <span class="slider-unit">%</span>
+            </div>
+          </div>
+          <button class="btn-ghost-sm" id="btn-scale-reset">↺ Reset</button>
+        </div>
+
+        <div class="control-group">
+          <div class="group-label">RESIZE</div>
+          <div class="input-row">
+            <div class="input-field">
+              <label>W (px)</label>
+              <input type="number" id="n-width" min="1" max="9999" />
+            </div>
+            <div class="input-field">
+              <label>H (px)</label>
+              <input type="number" id="n-height" min="1" max="9999" />
+            </div>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-secondary" id="btn-resize">⤢ Terapkan</button>
+            <button class="btn-secondary" id="btn-resize-mode">⤡ Tarik</button>
           </div>
         </div>
+
+        <div class="control-group">
+          <div class="group-label">CROP</div>
+          <button class="btn-secondary" id="btn-crop-mode">✂ Mode Crop</button>
+          <div id="crop-actions" class="btn-pair" hidden>
+            <button class="btn-apply" id="btn-crop-apply">✓ Potong</button>
+            <button class="btn-ghost-sm" id="btn-crop-cancel">✕ Batal</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="group-label">TRANSLATION</div>
+          <button class="btn-secondary" id="btn-drag-mode">⤳ Mode Geser</button>
+          <div class="input-row">
+            <div class="input-field">
+              <label>X (px)</label>
+              <input type="number" id="n-tx" value="0" />
+            </div>
+            <div class="input-field">
+              <label>Y (px)</label>
+              <input type="number" id="n-ty" value="0" />
+            </div>
+          </div>
+          <button class="btn-ghost-sm" id="btn-translate">Terapkan angka</button>
+        </div>
+
       </div>
 
-      <div class="action-group">
-        <button class="btn-apply" id="btn-apply">✓ Terapkan</button>
-        <button class="btn-secondary" id="btn-histeq">⊞ Histogram EQ</button>
-        <button class="btn-ghost-sm" id="btn-reset-sliders">↺ Reset Slider</button>
+
+            <!-- ══ RESTORATION TAB ══ -->
+      <div class="tab-content" id="tab-restoration">
+
+        <div class="info-badge">Pilih filter → geser slider → Terapkan</div>
+
+        <!-- Filter selector -->
+        <div class="control-group">
+          <div class="group-label">PILIH FILTER</div>
+          <div class="restore-filter-list">
+            <button class="restore-filter-btn active" data-filter="gaussian">Gaussian Blur</button>
+            <button class="restore-filter-btn" data-filter="median">Median Filter</button>
+            <button class="restore-filter-btn" data-filter="mean">Mean Filter</button>
+            <button class="restore-filter-btn" data-filter="saltpepper">Salt & Pepper</button>
+            <button class="restore-filter-btn" data-filter="unsharp">Unsharp Mask</button>
+          </div>
+        </div>
+
+        <!-- Gaussian -->
+        <div class="restore-params active" id="rp-gaussian">
+          <div class="control-group">
+            <div class="group-label">GAUSSIAN BLUR</div>
+            <div class="slider-row">
+              <label>Radius</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-gauss" min="1" max="20" value="4" step="1" />
+                <span class="slider-val" id="v-gauss">2.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Median -->
+        <div class="restore-params" id="rp-median">
+          <div class="control-group">
+            <div class="group-label">MEDIAN FILTER</div>
+            <div class="slider-row">
+              <label>Kernel size</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-median" min="1" max="4" value="1" step="1" />
+                <span class="slider-val" id="v-median">3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mean -->
+        <div class="restore-params" id="rp-mean">
+          <div class="control-group">
+            <div class="group-label">MEAN FILTER</div>
+            <div class="slider-row">
+              <label>Kernel size</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-mean" min="1" max="3" value="1" step="1" />
+                <span class="slider-val" id="v-mean">3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Salt & Pepper -->
+        <div class="restore-params" id="rp-saltpepper">
+          <div class="control-group">
+            <div class="group-label">SALT & PEPPER</div>
+            <div class="slider-row">
+              <label>Remove strength</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-sp-remove" min="1" max="3" value="2" step="1" />
+                <span class="slider-val" id="v-sp-remove">2</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>Add noise (demo)</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-sp-add" min="1" max="20" value="5" step="1" />
+                <span class="slider-val" id="v-sp-add">5%</span>
+              </div>
+            </div>
+            <button class="btn-ghost-sm" id="btn-sp-add">+ Tambah Noise</button>
+          </div>
+        </div>
+
+        <!-- Unsharp -->
+        <div class="restore-params" id="rp-unsharp">
+          <div class="control-group">
+            <div class="group-label">UNSHARP MASK</div>
+            <div class="slider-row">
+              <label>Radius</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-unsharp-r" min="1" max="10" value="2" step="1" />
+                <span class="slider-val" id="v-unsharp-r">2</span>
+              </div>
+            </div>
+            <div class="slider-row">
+              <label>Strength %</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-unsharp-p" min="50" max="300" value="150" step="10" />
+                <span class="slider-val" id="v-unsharp-p">150</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="action-group">
+          <button class="btn-apply" id="btn-restore-apply">✓ Terapkan</button>
+          <button class="btn-ghost-sm" id="btn-restore-preview">↺ Preview ulang</button>
+        </div>
+
       </div>
 
       <div class="status-bar" id="status-bar">Siap.</div>
     </aside>
+
   </main>
 
+
+  <!-- HISTOGRAM MODAL -->
+  <div id="hist-modal" class="hist-modal" hidden>
+    <div class="hist-box">
+      <div class="hist-header">
+        <span class="hist-title">HISTOGRAM</span>
+        <button class="hist-close" id="hist-close">✕</button>
+      </div>
+      <div class="hist-tabs">
+        <button class="hist-tab active" data-ch="rgb">RGB</button>
+        <button class="hist-tab" data-ch="r">R</button>
+        <button class="hist-tab" data-ch="g">G</button>
+        <button class="hist-tab" data-ch="b">B</button>
+        <button class="hist-tab" data-ch="gray">Gray</button>
+      </div>
+      <canvas id="hist-canvas" width="500" height="200"></canvas>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>
