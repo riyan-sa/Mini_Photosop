@@ -1,5 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap');
 
+/* ==========================================================================
+   1. GLOBAL STYLES & VARIABLES (Tema Cyberpunk Asli Kelompokmu)
+   ========================================================================== */
 :root {
   --bg:       #07071a;
   --bg2:      #0a0a20;
@@ -33,11 +36,9 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
   overflow: hidden;
-  /* pixel city bg */
   background-image: linear-gradient(180deg, #030312 0%, #060622 40%, #07071a 100%);
 }
 
-/* ─── subtle bottom glow ─── */
 body::after {
   content: '';
   position: fixed;
@@ -53,9 +54,9 @@ body::after {
 ::-webkit-scrollbar-thumb { background: var(--border2); }
 ::-webkit-scrollbar-thumb:hover { background: var(--cyan2); }
 
-/* ═══════════════════════════════════════════════
-   HEADER
-═══════════════════════════════════════════════ */
+/* ==========================================================================
+   2. HEADER UTAMA
+   ========================================================================== */
 header {
   flex-shrink: 0;
   position: relative;
@@ -88,24 +89,124 @@ header {
   text-shadow: 0 0 12px var(--pink), 0 0 30px rgba(255,68,204,0.3);
 }
 
-.toolbar { display: flex; align-items: center; gap: 6px; }
+/* Navigasi Toolbar Utama */
+.toolbar { 
+  display: flex !important; 
+  align-items: center !important; 
+  gap: 8px !important; 
+}
 
-.btn-primary {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px;
-  background: var(--cyan);
-  color: #000;
-  font-family: var(--font-px);
-  font-size: 6px;
-  letter-spacing: 0.06em;
-  border: none;
-  cursor: pointer;
-  text-transform: uppercase;
-  box-shadow: 0 0 14px rgba(0,207,255,0.5);
+/* ==========================================================================
+   3. SISTEM DROPDOWN "FILE" & "EDIT" (MINIPS EXCLUSIVE)
+   ========================================================================== */
+.file-menu-container {
+  position: relative;
+  display: inline-block !important;
+}
+
+/* Tombol utama pemicu dropdown (File / Edit) */
+.file-menu-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 6px 14px !important;
+  background: rgba(255,255,255,0.03) !important;
+  color: var(--text) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 13px !important;
+  border: 1px solid var(--border2) !important;
+  cursor: pointer !important;
   transition: all 0.15s;
 }
-.btn-primary:hover { background: #33dbff; box-shadow: 0 0 24px rgba(0,207,255,0.7); }
 
+.file-menu-btn:hover,
+.file-menu-container:hover .file-menu-btn {
+  color: var(--cyan) !important;
+  border-color: var(--cyan) !important;
+  background: var(--cyan-dim) !important;
+}
+
+/* Kotak List Menu Dropdown */
+.file-menu-dropdown {
+  display: none !important; /* Tersembunyi sebelum di-hover */
+  position: absolute !important;
+  left: 0 !important;
+  top: 100% !important;
+  min-width: 220px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border2) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.85) !important;
+  z-index: 9999 !important;
+  padding: 4px 0 !important;
+  margin-top: 2px !important;
+  flex-direction: column !important; /* Susun item tegak ke bawah */
+}
+
+/* Tampilkan isi dropdown saat di-hover kursor */
+.file-menu-container:hover .file-menu-dropdown {
+  display: flex !important;
+}
+
+/* Gaya item list di dalam dropdown */
+.file-menu-item {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 13px !important;
+  padding: 10px 16px !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  display: block !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  text-decoration: none !important;
+  transition: all 0.1s;
+}
+
+.file-menu-item:hover {
+  background: var(--surf2) !important;
+  color: var(--cyan) !important;
+}
+
+/* Tata letak khusus menu Edit (Teks kiri, shortcut kanan) */
+.menu-item-flex {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 30px !important;
+}
+
+.shortcut-text {
+  color: var(--text-dim) !important;
+  font-size: 11px !important;
+}
+
+.menu-item-flex:hover .shortcut-text {
+  color: #fff !important;
+}
+
+/* Modifikasi Item Unduh Gambar */
+#btn-download.file-menu-item {
+  color: var(--yellow) !important;
+}
+#btn-download.file-menu-item:hover {
+  background: rgba(255, 215, 0, 0.08) !important;
+}
+
+/* Modifikasi Item Hapus Gambar (Danger) */
+.btn-danger-item {
+  color: var(--red) !important;
+  border-top: 1px solid var(--border) !important;
+  margin-top: 4px !important;
+}
+.btn-danger-item:hover {
+  background: rgba(255, 68, 85, 0.08) !important;
+}
+
+/* ==========================================================================
+   4. GHOST BUTTONS (UNTUK ELEMEN DI LUAR DROPDOWN)
+   ========================================================================== */
 .btn-ghost {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 6px 12px;
@@ -119,12 +220,10 @@ header {
   transition: all 0.15s;
 }
 .btn-ghost:hover { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
-.btn-danger { color: var(--red) !important; border-color: #330010 !important; }
-.btn-danger:hover { border-color: var(--red) !important; }
 
-/* ═══════════════════════════════════════════════
-   MAIN — fixed height, no page scroll
-═══════════════════════════════════════════════ */
+/* ==========================================================================
+   5. LAYOUT UTAMA & WORKSPACE PREVIEW
+   ========================================================================== */
 main {
   flex: 1;
   display: flex;
@@ -134,9 +233,6 @@ main {
   align-items: flex-start;
 }
 
-/* ═══════════════════════════════════════════════
-   CANVAS AREA
-═══════════════════════════════════════════════ */
 .canvas-area {
   flex: 1;
   display: flex;
@@ -152,7 +248,6 @@ main {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 0;
   min-width: 280px;
 }
 
@@ -207,9 +302,7 @@ main {
   position: relative; z-index: 1;
   color: transparent;
 }
-#img-before, #img-after { display: none; }
 
-/* Empty state */
 .empty-state {
   display: flex; flex-direction: column;
   align-items: center; gap: 14px;
@@ -237,7 +330,6 @@ main {
   box-shadow: inset 0 0 30px rgba(0,207,255,0.04), 0 0 20px rgba(0,207,255,0.1);
 }
 
-/* divider */
 .divider-dot-v {
   width: 1px;
   background: linear-gradient(180deg, transparent, var(--border2) 30%, var(--border2) 70%, transparent);
@@ -261,7 +353,6 @@ main {
   50%      { opacity: 1; box-shadow: 0 0 16px var(--cyan); }
 }
 
-/* loading */
 .loading-overlay {
   position: absolute; inset: 0;
   background: rgba(5,5,18,0.85);
@@ -276,11 +367,10 @@ main {
   animation: spin 0.65s linear infinite;
   box-shadow: 0 0 16px rgba(0,207,255,0.4);
 }
-@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ═══════════════════════════════════════════════
-   CONTROLS SIDEBAR — scrollable
-═══════════════════════════════════════════════ */
+/* ==========================================================================
+   6. CONTROLS SIDEBAR (PANEL FILTERS SEBELAH KANAN)
+   ========================================================================== */
 .controls {
   width: 380px;
   flex-shrink: 0;
@@ -296,7 +386,6 @@ main {
   gap: 12px;
 }
 
-/* Tabs */
 .tabs { display: flex; border-bottom: 1px solid var(--border2); }
 .tab {
   flex: 1; padding: 10px 6px;
@@ -318,7 +407,6 @@ main {
 .tab-content { display: none; flex-direction: column; gap: 10px; }
 .tab-content.active { display: flex; }
 
-/* Control group */
 .control-group {
   display: flex; flex-direction: column; gap: 10px;
   background: rgba(0,5,20,0.5);
@@ -337,7 +425,6 @@ main {
   text-shadow: 0 0 8px rgba(0,207,255,0.4);
 }
 
-/* Sliders */
 .slider-row { display: flex; flex-direction: column; gap: 6px; }
 .slider-row > label {
   font-family: var(--font-ui); font-size: 12px;
@@ -366,7 +453,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
 
-/* val-input (scale number) */
 .val-input {
   width: 52px; padding: 3px 6px;
   background: var(--surf2); color: var(--yellow);
@@ -376,7 +462,6 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
 }
 .val-input:focus { border-color: var(--cyan); }
 
-/* Number inputs */
 .input-row { display: flex; gap: 8px; }
 .input-field { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .input-field label {
@@ -392,16 +477,6 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
 }
 .input-field input[type="number"]:focus { border-color: var(--cyan); }
 
-/* Checkbox */
-.inline-row { display: flex; align-items: center; }
-.check-label {
-  display: flex; align-items: center; gap: 8px;
-  font-family: var(--font-ui); font-size: 12px;
-  color: var(--text-dim); cursor: pointer;
-}
-input[type="checkbox"] { accent-color: var(--cyan); width: 13px; height: 13px; }
-
-/* Action buttons */
 .action-group { display: flex; flex-direction: column; gap: 8px; }
 
 .btn-apply {
@@ -446,7 +521,6 @@ input[type="checkbox"] { accent-color: var(--cyan); width: 13px; height: 13px; }
 .btn-pair .btn-apply { flex: 1; }
 .btn-pair .btn-ghost-sm { flex: 1; }
 
-/* Status bar */
 .status-bar {
   margin-top: 8px;
   padding: 9px 12px;
@@ -460,16 +534,14 @@ input[type="checkbox"] { accent-color: var(--cyan); width: 13px; height: 13px; }
 .status-bar.ok    { color: var(--green); border-left-color: var(--green); text-shadow: 0 0 8px rgba(0,255,159,0.3); }
 .status-bar.error { color: var(--red);   border-left-color: var(--red);   text-shadow: 0 0 8px rgba(255,68,85,0.3);  }
 
-/* ═══════════════════════════════════════════════
-   CROP & RESIZE OVERLAYS
-═══════════════════════════════════════════════ */
+/* ==========================================================================
+   7. CROP, RESIZE, & HISTOGRAM OVERLAYS / MODALS
+   ========================================================================== */
 .crop-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
 .crop-mask    { position: absolute; background: rgba(0,0,10,0.72); pointer-events: none; }
 .crop-box {
-  position: absolute;
-  border: 1px solid var(--yellow);
-  box-shadow: 0 0 0 1px rgba(255,215,0,0.15);
-  cursor: move; pointer-events: all;
+  position: absolute; border: 1px solid var(--yellow);
+  box-shadow: 0 0 0 1px rgba(255,215,0,0.15); cursor: move; pointer-events: all;
 }
 .crop-handle {
   position: absolute; width: 10px; height: 10px;
@@ -486,9 +558,7 @@ input[type="checkbox"] { accent-color: var(--cyan); width: 13px; height: 13px; }
 .crop-handle[data-pos="r"]  { right:-5px;  top:50%;   transform:translateY(-50%);cursor:ew-resize;  }
 
 .resize-overlay {
-  position: absolute;
-  border: 1px dashed rgba(0,207,255,0.5);
-  pointer-events: none; z-index: 10;
+  position: absolute; border: 1px dashed rgba(0,207,255,0.5); pointer-events: none; z-index: 10;
 }
 .resize-handle {
   position: absolute; width: 11px; height: 11px;
@@ -499,91 +569,47 @@ input[type="checkbox"] { accent-color: var(--cyan); width: 13px; height: 13px; }
 .resize-handle[data-pos="b"]  { bottom:-5px;  left:50%;  transform:translateX(-50%);cursor:ns-resize;  }
 .resize-handle[data-pos="br"] { right:-5px;   bottom:-5px;                           cursor:nwse-resize;}
 
-/* ═══════════════════════════════════════════════
-   HISTOGRAM MODAL
-═══════════════════════════════════════════════ */
 .hist-modal {
-  position: fixed; inset: 0; z-index: 200;
-  background: rgba(0,0,10,0.75);
+  position: fixed; inset: 0; z-index: 200; background: rgba(0,0,10,0.75);
   display: flex; align-items: center; justify-content: center;
 }
 .hist-modal[hidden] { display: none; }
 
 .hist-box {
-  background: var(--surface);
-  border: 1px solid var(--border2);
+  background: var(--surface); border: 1px solid var(--border2);
   box-shadow: 0 0 40px rgba(0,207,255,0.15), 0 20px 60px rgba(0,0,0,0.8);
-  width: 560px;
-  padding: 20px;
-  display: flex; flex-direction: column; gap: 14px;
+  width: 560px; padding: 20px; display: flex; flex-direction: column; gap: 14px;
 }
-
-.hist-header {
-  display: flex; align-items: center; justify-content: space-between;
-}
+.hist-header { display: flex; align-items: center; justify-content: space-between; }
 .hist-title {
-  font-family: var(--font-px); font-size: 8px;
-  color: var(--cyan); letter-spacing: 0.15em;
+  font-family: var(--font-px); font-size: 8px; color: var(--cyan); letter-spacing: 0.15em;
   text-shadow: 0 0 10px rgba(0,207,255,0.5);
 }
 .hist-close {
-  background: transparent; border: 1px solid var(--border2);
-  color: var(--text-dim); font-size: 14px;
-  width: 28px; height: 28px; cursor: pointer;
-  transition: all 0.15s;
+  background: transparent; border: 1px solid var(--border2); color: var(--text-dim);
+  font-size: 14px; width: 28px; height: 28px; cursor: pointer; transition: all 0.15s;
 }
 .hist-close:hover { color: var(--red); border-color: var(--red); }
 
 .hist-tabs { display: flex; gap: 4px; }
 .hist-tab {
-  padding: 6px 14px;
-  background: transparent;
-  color: var(--text-dim);
-  font-family: var(--font-ui); font-size: 12px;
-  border: 1px solid var(--border2);
+  padding: 6px 14px; background: transparent; color: var(--text-dim);
+  font-family: var(--font-ui); font-size: 12px; border: 1px solid var(--border2);
   cursor: pointer; transition: all 0.15s;
 }
 .hist-tab:hover { color: var(--cyan); border-color: var(--cyan); }
-.hist-tab.active {
-  color: var(--cyan); border-color: var(--cyan);
-  background: var(--cyan-dim);
-}
+.hist-tab.active { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); }
 
-#hist-canvas {
-  width: 100%; height: 200px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  display: block;
-}
+#hist-canvas { width: 100%; height: 200px; background: var(--bg2); border: 1px solid var(--border); display: block; }
 
-/* ─── Restoration filter selector ───────────────────────── */
-.restore-filter-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.restore-filter-list { display: flex; flex-direction: column; gap: 4px; }
 .restore-filter-btn {
-  padding: 8px 12px;
-  background: transparent;
-  color: var(--text-dim);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  border: 1px solid var(--border);
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.12s;
+  padding: 8px 12px; background: transparent; color: var(--text-dim);
+  font-family: var(--font-ui); font-size: 12px; border: 1px solid var(--border);
+  text-align: left; cursor: pointer; transition: all 0.12s;
 }
-.restore-filter-btn:hover {
-  color: var(--cyan);
-  border-color: var(--border2);
-  background: var(--cyan-dim);
-}
-.restore-filter-btn.active {
-  color: var(--cyan);
-  border-color: var(--cyan);
-  background: var(--cyan-dim);
-  border-left-width: 3px;
-}
+.restore-filter-btn:hover { color: var(--cyan); border-color: var(--border2); background: var(--cyan-dim); }
+.restore-filter-btn.active { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-dim); border-left-width: 3px; }
 
 .restore-params { display: none; }
 .restore-params.active { display: block; }

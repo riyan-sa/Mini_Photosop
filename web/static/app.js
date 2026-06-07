@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   Mini Photoshop — app.js v4
+   Mini Photoshop — app.js (FINAL FIX: Undo/Redo/Tab/Shortcuts)
    Live preview via CSS transform, commit on release
    ══════════════════════════════════════════════════════════ */
 
@@ -23,7 +23,7 @@ const fileInput    = $('file-input');
 const imgBefore    = $('img-before');
 const imgAfter     = $('img-after');
 const emptyState   = $('empty-state');
-const loading      = $('loading');
+const loading      = $('loading') || document.querySelector('.loading-overlay');
 const statusBar    = $('status-bar');
 const imgInfo      = $('img-info');
 const beforeWrap   = $('before-wrap');
@@ -42,12 +42,15 @@ const ENH_SLIDERS = {
 
 /* ─── Helpers ────────────────────────────────────────────── */
 const setStatus = (msg, type='') => {
-  statusBar.textContent = msg;
-  statusBar.className = 'status-bar ' + type;
+  if (statusBar) {
+    statusBar.textContent = msg;
+    statusBar.className = 'status-bar ' + type;
+  }
 };
-const showLoading = show => loading.style.display = show ? 'flex' : 'none';
+const showLoading = show => { if(loading) loading.style.display = show ? 'flex' : 'none'; };
 
 function showImage(b64, target) {
+  if(!target) return;
   target.src = 'data:image/jpeg;base64,' + b64;
   target.style.display = 'block';
   target.style.transform = '';   // clear CSS preview transform on new image
@@ -56,9 +59,9 @@ function showImage(b64, target) {
 function updateInfo(info) {
   if (!info?.width) return;
   S.imgW = info.width; S.imgH = info.height;
-  imgInfo.textContent = `${info.width} × ${info.height}px · ${info.mode}`;
-  $('n-width').value  = info.width;
-  $('n-height').value = info.height;
+  if(imgInfo) imgInfo.textContent = `${info.width} × ${info.height}px · ${info.mode}`;
+  if($('n-width')) $('n-width').value  = info.width;
+  if($('n-height')) $('n-height').value = info.height;
 }
 
 function getEnhValues() {
@@ -72,27 +75,29 @@ function getEnhValues() {
 
 function resetEnhSliders() {
   Object.values(ENH_SLIDERS).forEach(s => {
-    s.el.value = s.default;
-    s.val.textContent = s.default;
+    if(s.el) s.el.value = s.default;
+    if(s.val) s.val.textContent = s.default;
   });
   S.enh = { brightness:1.0, contrast:1.0, sharpen:1.0, blur:0.0 };
 }
 
 function resetGeoUI() {
-  $('s-rotate').value = 0;  $('v-rotate').textContent = '0°';
-  $('s-scale').value  = 100; $('v-scale').textContent  = '100%';
-  $('n-tx').value = 0; $('n-ty').value = 0;
+  if($('s-rotate')) { $('s-rotate').value = 0;  $('v-rotate').textContent = '0°'; }
+  if($('s-scale')) { $('s-scale').value  = 100; $('v-scale').textContent  = '100%'; }
+  if($('n-tx')) { $('n-tx').value = 0; $('n-ty').value = 0; }
   S.geo = { flip_h:false, flip_v:false, crop:null, scale:1.0, rotate:0.0, tx:0, ty:0 };
-  imgAfter.style.transform = '';
-  imgAfter.style.transformOrigin = '';
+  if(imgAfter) {
+    imgAfter.style.transform = '';
+    imgAfter.style.transformOrigin = '';
+  }
 }
 
 function clearCanvas() {
-  imgBefore.style.display = imgAfter.style.display = 'none';
-  imgBefore.src = imgAfter.src = '';
-  emptyState.style.display = '';
+  if(imgBefore) { imgBefore.style.display = 'none'; imgBefore.src = ''; }
+  if(imgAfter) { imgAfter.style.display = 'none'; imgAfter.src = ''; }
+  if(emptyState) emptyState.style.display = '';
   S.hasImage = false;
-  imgInfo.textContent = '—';
+  if(imgInfo) imgInfo.textContent = '—';
   resetEnhSliders(); resetGeoUI();
   exitCropMode(); exitResizeMode(); exitDragMode();
 }
@@ -103,7 +108,8 @@ document.querySelectorAll('.tab').forEach(tab =>
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
-    $('tab-' + tab.dataset.tab).classList.add('active');
+    const target = $('tab-' + tab.dataset.tab);
+    if(target) target.classList.add('active');
   })
 );
 
@@ -116,8 +122,8 @@ async function api(endpoint, body=null, method='POST') {
     const res  = await fetch('/api/' + endpoint, opts);
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Error');
-    showImage(data.image, imgAfter);
-    updateInfo(data.info);
+    if(data.image) showImage(data.image, imgAfter);
+    if(data.info) updateInfo(data.info);
     setStatus('✓ ' + data.message, 'ok');
     return data;
   } catch(e) {
@@ -126,7 +132,7 @@ async function api(endpoint, body=null, method='POST') {
   } finally { showLoading(false); }
 }
 
-function commitGeo(msg='') {
+function commitGeo() {
   return api('geo_commit', { ...S.geo, crop: S.geo.crop ? [...S.geo.crop] : null });
 }
 
@@ -143,7 +149,7 @@ async function uploadImage(file) {
     const res  = await fetch('/api/upload', { method:'POST', body:form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail);
-    emptyState.style.display = 'none';
+    if(emptyState) emptyState.style.display = 'none';
     showImage(data.image, imgBefore);
     showImage(data.image, imgAfter);
     S.hasImage = true;
@@ -154,10 +160,60 @@ async function uploadImage(file) {
   finally { showLoading(false); }
 }
 
+/* ─── HISTORY UNDO/REDO & SHORTCUTS ──────────────────────── */
+function syncStateAfterUndoRedo(data) {
+  if (data.enh_state) {
+    const e = data.enh_state;
+    if(ENH_SLIDERS.brightness.el) {
+      ENH_SLIDERS.brightness.el.value = Math.round(e.brightness * 100);
+      ENH_SLIDERS.brightness.val.textContent = Math.round(e.brightness * 100);
+      ENH_SLIDERS.contrast.el.value   = Math.round(e.contrast   * 100);
+      ENH_SLIDERS.contrast.val.textContent   = Math.round(e.contrast   * 100);
+      ENH_SLIDERS.sharpen.el.value    = Math.round(e.sharpen    * 100);
+      ENH_SLIDERS.sharpen.val.textContent    = Math.round(e.sharpen    * 100);
+      ENH_SLIDERS.blur.el.value       = Math.round(e.blur       * 2);
+      ENH_SLIDERS.blur.val.textContent       = Math.round(e.blur       * 2);
+    }
+    S.enh = {...e};
+  }
+  if (data.geo_state) {
+    const g = data.geo_state;
+    S.geo = {...S.geo, ...g};
+    if($('s-rotate')) { $('s-rotate').value = g.rotate; $('v-rotate').textContent = g.rotate + '°'; }
+    if($('s-scale')) { $('s-scale').value  = Math.round(g.scale * 100); $('v-scale').textContent = Math.round(g.scale * 100) + '%'; }
+    if($('n-tx')) { $('n-tx').value = g.tx; $('n-ty').value = g.ty; }
+  }
+}
+
+async function performUndo() {
+  if (!S.hasImage) return;
+  const data = await api('undo');
+  if (data) syncStateAfterUndoRedo(data);
+}
+
+async function performRedo() {
+  if (!S.hasImage) return;
+  const data = await api('redo');
+  if (data) syncStateAfterUndoRedo(data);
+}
+
+document.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if (e.ctrlKey && e.shiftKey && key === 'z') { e.preventDefault(); performRedo(); } 
+  else if (e.ctrlKey && key === 'z') { e.preventDefault(); performUndo(); }
+  else if (e.ctrlKey && key === 'y') { e.preventDefault(); performRedo(); }
+});
+
+// Dropdown menu file & edit integration
+if($('btn-undo')) $('btn-undo').addEventListener('click', (e) => { e.preventDefault(); performUndo(); });
+if($('btn-redo')) $('btn-redo').addEventListener('click', (e) => { e.preventDefault(); performRedo(); });
+
+
 /* ─── Enhancement — live on input, commit on change ─────── */
 let enhTimer;
 Object.entries(ENH_SLIDERS).forEach(([k, s]) => {
-  // update label instantly
+  if(!s.el) return;
+  s.el.addEventListener('mousedown', async () => { if(S.hasImage) await pushHistory(); });
   s.el.addEventListener('input', () => {
     s.val.textContent = s.el.value;
     if (!S.hasImage) return;
@@ -171,46 +227,49 @@ Object.entries(ENH_SLIDERS).forEach(([k, s]) => {
 const sRotate = $('s-rotate');
 const vRotate = $('v-rotate');
 let rotateTimer;
-
-sRotate.addEventListener('input', () => {
-  const deg = +sRotate.value;
-  vRotate.textContent = deg + '°';
-  S.geo.rotate = deg;
-  if (!S.hasImage) return;
-  clearTimeout(rotateTimer);
-  rotateTimer = setTimeout(() => commitGeo(), 120);
-});
+if(sRotate) {
+  sRotate.addEventListener('mousedown', async () => { if(S.hasImage) await pushHistory(); });
+  sRotate.addEventListener('input', () => {
+    const deg = +sRotate.value;
+    vRotate.textContent = deg + '°';
+    S.geo.rotate = deg;
+    if (!S.hasImage) return;
+    clearTimeout(rotateTimer);
+    rotateTimer = setTimeout(() => commitGeo(), 120);
+  });
+}
 
 /* ─── SCALE — debounce direct to server ─────────────────── */
 const sScale = $('s-scale');
 const vScale = $('v-scale');
 let scaleTimer;
+if(sScale) {
+  sScale.addEventListener('mousedown', async () => { if(S.hasImage) await pushHistory(); });
+  sScale.addEventListener('input', () => {
+    const pct = +sScale.value;
+    vScale.textContent = pct + '%';
+    const nScale = $('n-scale');
+    if (nScale) nScale.value = pct;
+    S.geo.scale = pct / 100;
+    if (!S.hasImage) return;
+    clearTimeout(scaleTimer);
+    scaleTimer = setTimeout(() => commitGeo(), 120);
+  });
+}
 
-sScale.addEventListener('input', () => {
-  const pct = +sScale.value;
-  vScale.textContent = pct + '%';
-  const nScale = document.getElementById('n-scale');
-  if (nScale) nScale.value = pct;
-  S.geo.scale = pct / 100;
-  if (!S.hasImage) return;
-  clearTimeout(scaleTimer);
-  scaleTimer = setTimeout(() => commitGeo(), 120);
-});
-
-// Input angka scale
-const nScaleEl = document.getElementById('n-scale');
+const nScaleEl = $('n-scale');
 if (nScaleEl) {
-  nScaleEl.addEventListener('change', () => {
+  nScaleEl.addEventListener('change', async () => {
+    await pushHistory();
     const pct = Math.max(10, Math.min(2000, +nScaleEl.value));
     nScaleEl.value = pct;
-    sScale.value = Math.min(1000, pct);
-    vScale.textContent = pct + '%';
+    if(sScale) sScale.value = Math.min(1000, pct);
+    if(vScale) vScale.textContent = pct + '%';
     S.geo.scale = pct / 100;
     if (S.hasImage) commitGeo();
   });
 }
 
-/* CSS transform helper (used only for drag translation preview) */
 function buildCSSTransform() {
   if (S.geo.tx || S.geo.ty) return `translate(${S.geo.tx}px, ${S.geo.ty}px)`;
   return '';
@@ -218,12 +277,11 @@ function buildCSSTransform() {
 
 /* ─── TRANSLATION — drag the image ──────────────────────── */
 let dragStartX, dragStartY, dragOrigTx, dragOrigTy;
-
 function enterDragMode() {
   if (!S.hasImage) return;
   S.dragMode = true;
   imgAfter.style.cursor = 'grab';
-  $('btn-drag-mode').textContent = '✕ Keluar Mode Geser';
+  if($('btn-drag-mode')) $('btn-drag-mode').textContent = '✕ Keluar Mode Geser';
   imgAfter.addEventListener('pointerdown', startImageDrag);
 }
 function exitDragMode() {
@@ -237,14 +295,15 @@ function startImageDrag(e) {
   imgAfter.style.cursor = 'grabbing';
   dragStartX = e.clientX; dragStartY = e.clientY;
   dragOrigTx = S.geo.tx;  dragOrigTy = S.geo.ty;
+  pushHistory(); // Simpan riwayat sebelum ditarik
 
   function onMove(e) {
     const dx = Math.round(e.clientX - dragStartX);
     const dy = Math.round(e.clientY - dragStartY);
     S.geo.tx = dragOrigTx + dx;
     S.geo.ty = dragOrigTy + dy;
-    $('n-tx').value = S.geo.tx;
-    $('n-ty').value = S.geo.ty;
+    if($('n-tx')) $('n-tx').value = S.geo.tx;
+    if($('n-ty')) $('n-ty').value = S.geo.ty;
     imgAfter.style.transform = buildCSSTransform();
     imgAfter.style.transformOrigin = 'center center';
   }
@@ -260,29 +319,29 @@ function startImageDrag(e) {
 }
 
 /* ─── CROP — interactive overlay ────────────────────────── */
-let crop = { x:10, y:10, w:80, h:80 }; // in % of displayed image
-
+let crop = { x:10, y:10, w:80, h:80 };
 function enterCropMode() {
   if (!S.hasImage) return;
   exitResizeMode(); exitDragMode();
   S.cropMode = true;
   crop = { x:10, y:10, w:80, h:80 };
-  cropOverlay.hidden = false;
-  cropActions.hidden = false;
-  $('btn-crop-mode').textContent = '✕ Keluar Crop';
-  $('after-label').textContent = 'AFTER — MODE CROP';
+  if(cropOverlay) cropOverlay.hidden = false;
+  if(cropActions) cropActions.hidden = false;
+  if($('btn-crop-mode')) $('btn-crop-mode').textContent = '✕ Keluar Crop';
+  if($('after-label')) $('after-label').textContent = 'AFTER — MODE CROP';
   updateCropBox();
   initCropDrag();
 }
 function exitCropMode() {
   S.cropMode = false;
-  cropOverlay.hidden = true;
-  cropActions.hidden = true;
-  const b = $('btn-crop-mode'); if (b) b.textContent = '✂ Mode Crop';
-  const l = $('after-label');   if (l) l.textContent = 'AFTER';
+  if(cropOverlay) cropOverlay.hidden = true;
+  if(cropActions) cropActions.hidden = true;
+  if($('btn-crop-mode')) $('btn-crop-mode').textContent = '✂ Mode Crop';
+  if($('after-label')) $('after-label').textContent = 'AFTER';
 }
 
 function updateCropBox() {
+  if(!cropBox || !afterWrap || !imgAfter) return;
   const wrap = afterWrap.getBoundingClientRect();
   const img  = imgAfter.getBoundingClientRect();
   const ox = img.left - wrap.left, oy = img.top - wrap.top;
@@ -291,13 +350,14 @@ function updateCropBox() {
   const bw = (crop.w/100)*iw,      bh = (crop.h/100)*ih;
 
   cropBox.style.cssText = `left:${bx}px;top:${by}px;width:${bw}px;height:${bh}px`;
-  $('crop-mask-top').style.cssText    = `top:${oy}px;left:${ox}px;width:${iw}px;height:${by-oy}px`;
-  $('crop-mask-left').style.cssText   = `top:${by}px;left:${ox}px;width:${bx-ox}px;height:${bh}px`;
-  $('crop-mask-right').style.cssText  = `top:${by}px;left:${bx+bw}px;width:${ox+iw-bx-bw}px;height:${bh}px`;
-  $('crop-mask-bottom').style.cssText = `top:${by+bh}px;left:${ox}px;width:${iw}px;height:${oy+ih-by-bh}px`;
+  if($('crop-mask-top')) $('crop-mask-top').style.cssText    = `top:${oy}px;left:${ox}px;width:${iw}px;height:${by-oy}px`;
+  if($('crop-mask-left')) $('crop-mask-left').style.cssText   = `top:${by}px;left:${ox}px;width:${bx-ox}px;height:${bh}px`;
+  if($('crop-mask-right')) $('crop-mask-right').style.cssText  = `top:${by}px;left:${bx+bw}px;width:${ox+iw-bx-bw}px;height:${bh}px`;
+  if($('crop-mask-bottom')) $('crop-mask-bottom').style.cssText = `top:${by+bh}px;left:${ox}px;width:${iw}px;height:${oy+ih-by-bh}px`;
 }
 
 function initCropDrag() {
+  if(!cropBox) return;
   cropBox.querySelectorAll('.crop-handle').forEach(h => {
     h.onpointerdown = e => {
       e.preventDefault(); e.stopPropagation();
@@ -335,17 +395,17 @@ function initCropDrag() {
 }
 
 async function applyCrop() {
-  // konversi % display → piksel gambar di server (setelah flip, sebelum scale/rotate)
-  // ambil ukuran geo_img sebelum scale/rotate: approx = imgW/scale
   const baseW = Math.round(S.imgW / S.geo.scale);
   const baseH = Math.round(S.imgH / S.geo.scale);
   const l = Math.round((crop.x/100)*baseW);
   const t = Math.round((crop.y/100)*baseH);
   const r = Math.round(((crop.x+crop.w)/100)*baseW);
   const b = Math.round(((crop.y+crop.h)/100)*baseH);
-  await pushHistory(); await api('crop', {left:l, top:t, right:r, bottom:b});
-  // sync scale ke 1 karena crop sudah mengubah ukuran dasar
-  S.geo.scale = 1.0; $('s-scale').value=100; $('v-scale').textContent='100%';
+  await pushHistory(); 
+  await api('crop', {left:l, top:t, right:r, bottom:b});
+  S.geo.scale = 1.0; 
+  if($('s-scale')) $('s-scale').value=100; 
+  if($('v-scale')) $('v-scale').textContent='100%';
   exitCropMode();
 }
 
@@ -354,18 +414,21 @@ function enterResizeMode() {
   if (!S.hasImage) return;
   exitCropMode(); exitDragMode();
   S.resizeMode = true;
-  resizeOverlay.hidden = false;
-  $('btn-resize-mode').textContent = '✕ Keluar Mode Tarik';
+  if(resizeOverlay) resizeOverlay.hidden = false;
+  if($('btn-resize-mode')) $('btn-resize-mode').textContent = '✕ Keluar Mode Tarik';
   positionResizeHandles();
-  resizeOverlay.querySelectorAll('.resize-handle').forEach(h => h.addEventListener('pointerdown', startResizeDrag));
+  if(resizeOverlay) resizeOverlay.querySelectorAll('.resize-handle').forEach(h => h.addEventListener('pointerdown', startResizeDrag));
 }
 function exitResizeMode() {
   S.resizeMode = false;
-  resizeOverlay.hidden = true;
-  const b = $('btn-resize-mode'); if(b) b.textContent = '⤡ Mode Tarik';
-  resizeOverlay.querySelectorAll('.resize-handle').forEach(h => h.removeEventListener('pointerdown', startResizeDrag));
+  if(resizeOverlay) {
+    resizeOverlay.hidden = true;
+    resizeOverlay.querySelectorAll('.resize-handle').forEach(h => h.removeEventListener('pointerdown', startResizeDrag));
+  }
+  if($('btn-resize-mode')) $('btn-resize-mode').textContent = '⤡ Mode Tarik';
 }
 function positionResizeHandles() {
+  if(!resizeOverlay || !imgAfter || !afterWrap) return;
   const img  = imgAfter.getBoundingClientRect();
   const wrap = afterWrap.getBoundingClientRect();
   resizeOverlay.style.cssText = `left:${img.left-wrap.left}px;top:${img.top-wrap.top}px;width:${img.width}px;height:${img.height}px`;
@@ -382,8 +445,8 @@ function startResizeDrag(e) {
     let nw=sw, nh=sh;
     if(pos.includes('r')||pos==='br') nw=Math.max(10, sw+Math.round(dx/scale));
     if(pos.includes('b')||pos==='br') nh=Math.max(10, sh+Math.round(dy/scale));
-    $('n-width').value=nw; $('n-height').value=nh;
-    // CSS preview
+    if($('n-width')) $('n-width').value=nw; 
+    if($('n-height')) $('n-height').value=nh;
     imgAfter.style.width  = (nw/sw*imgAfter.getBoundingClientRect().width)+'px';
     clearTimeout(resizeTimer);
   };
@@ -393,7 +456,8 @@ function startResizeDrag(e) {
     imgAfter.style.width='';
     const nw=parseInt($('n-width').value);
     const nh=parseInt($('n-height').value);
-    await pushHistory().then(()=>api('resize',{width:nw,height:nh}));
+    await pushHistory();
+    await api('resize',{width:nw,height:nh});
     positionResizeHandles();
   };
   document.addEventListener('pointermove',onMove);
@@ -401,78 +465,52 @@ function startResizeDrag(e) {
 }
 
 /* ─── Event Listeners ────────────────────────────────────── */
-fileInput.addEventListener('change', e => { if(e.target.files[0]) uploadImage(e.target.files[0]); e.target.value=''; });
-beforeWrap.addEventListener('click', ()=>{ if(!S.hasImage) fileInput.click(); });
+if(fileInput) fileInput.addEventListener('change', e => { if(e.target.files[0]) uploadImage(e.target.files[0]); e.target.value=''; });
+if(beforeWrap) beforeWrap.addEventListener('click', ()=>{ if(!S.hasImage && fileInput) fileInput.click(); });
 
-$('btn-clear').addEventListener('click', ()=>{ if(S.hasImage){ clearCanvas(); setStatus('Gambar dihapus.'); } });
+if($('btn-clear')) $('btn-clear').addEventListener('click', ()=>{ if(S.hasImage){ clearCanvas(); setStatus('Gambar dihapus.'); } });
+if($('btn-apply')) $('btn-apply').addEventListener('click', async ()=>{ if(S.hasImage){ await pushHistory(); api('enhance', getEnhValues()); } });
+if($('btn-reset-sliders')) $('btn-reset-sliders').addEventListener('click', async ()=>{ if(S.hasImage) await pushHistory(); resetEnhSliders(); if(S.hasImage) api('enhance', getEnhValues()); });
 
-$('btn-apply').addEventListener('click', ()=>{ if(S.hasImage) api('enhance', getEnhValues()); });
-// histeq handled by histogram modal below
-$('btn-reset-sliders').addEventListener('click', ()=>{ resetEnhSliders(); if(S.hasImage) api('enhance', getEnhValues()); });
-
-$('btn-reset').addEventListener('click', async ()=>{
+if($('btn-reset')) $('btn-reset').addEventListener('click', async ()=>{
   if(!S.hasImage) return;
   exitCropMode(); exitResizeMode(); exitDragMode();
+  await pushHistory();
   const data = await api('reset', null, 'GET');
   if(data){ showImage(data.image, imgBefore); resetEnhSliders(); resetGeoUI(); }
 });
 
-$('btn-rotate-reset').addEventListener('click', ()=>{
-  sRotate.value=0; vRotate.textContent='0°'; S.geo.rotate=0;
-  imgAfter.style.transform=''; if(S.hasImage) commitGeo();
+if($('btn-rotate-reset')) $('btn-rotate-reset').addEventListener('click', async ()=>{
+  if(S.hasImage) await pushHistory();
+  if(sRotate) sRotate.value=0; if(vRotate) vRotate.textContent='0°'; S.geo.rotate=0;
+  if(imgAfter) imgAfter.style.transform=''; if(S.hasImage) commitGeo();
 });
-$('btn-scale-reset').addEventListener('click', ()=>{
-  sScale.value=100; vScale.textContent='100%'; S.geo.scale=1.0;
-  imgAfter.style.transform=''; if(S.hasImage) commitGeo();
+if($('btn-scale-reset')) $('btn-scale-reset').addEventListener('click', async ()=>{
+  if(S.hasImage) await pushHistory();
+  if(sScale) sScale.value=100; if(vScale) vScale.textContent='100%'; S.geo.scale=1.0;
+  if(imgAfter) imgAfter.style.transform=''; if(S.hasImage) commitGeo();
 });
 
-$('btn-flip-h').addEventListener('click', ()=>{ S.geo.flip_h=!S.geo.flip_h; if(S.hasImage) pushHistory().then(()=>commitGeo()); });
-$('btn-flip-v').addEventListener('click', ()=>{ S.geo.flip_v=!S.geo.flip_v; if(S.hasImage) pushHistory().then(()=>commitGeo()); });
+if($('btn-flip-h')) $('btn-flip-h').addEventListener('click', ()=>{ S.geo.flip_h=!S.geo.flip_h; if(S.hasImage) pushHistory().then(()=>commitGeo()); });
+if($('btn-flip-v')) $('btn-flip-v').addEventListener('click', ()=>{ S.geo.flip_v=!S.geo.flip_v; if(S.hasImage) pushHistory().then(()=>commitGeo()); });
 
-$('btn-resize').addEventListener('click', ()=>{
+if($('btn-resize')) $('btn-resize').addEventListener('click', async ()=>{
   const w=parseInt($('n-width').value), h=parseInt($('n-height').value);
   if(!w||!h){ setStatus('Isi width dan height.','error'); return; }
+  await pushHistory();
   api('resize',{width:w,height:h});
 });
-$('btn-resize-mode').addEventListener('click', ()=>{ S.resizeMode ? exitResizeMode() : enterResizeMode(); });
+if($('btn-resize-mode')) $('btn-resize-mode').addEventListener('click', ()=>{ S.resizeMode ? exitResizeMode() : enterResizeMode(); });
 
-$('btn-crop-mode').addEventListener('click', ()=>{ S.cropMode ? exitCropMode() : enterCropMode(); });
-$('btn-crop-apply').addEventListener('click', applyCrop);
-$('btn-crop-cancel').addEventListener('click', exitCropMode);
+if($('btn-crop-mode')) $('btn-crop-mode').addEventListener('click', ()=>{ S.cropMode ? exitCropMode() : enterCropMode(); });
+if($('btn-crop-apply')) $('btn-crop-apply').addEventListener('click', applyCrop);
+if($('btn-crop-cancel')) $('btn-crop-cancel').addEventListener('click', exitCropMode);
 
-$('btn-drag-mode').addEventListener('click', ()=>{ S.dragMode ? exitDragMode() : enterDragMode(); });
-$('btn-translate').addEventListener('click', ()=>{
-  S.geo.tx = parseInt($('n-tx').value)||0;
-  S.geo.ty = parseInt($('n-ty').value)||0;
-  if(S.hasImage) commitGeo();
-});
-
-$('btn-undo').addEventListener('click', async () => {
-  if (!S.hasImage) return;
-  const data = await api('undo');
-  if (data) {
-    // Sync enhancement sliders from server state
-    if (data.enh_state) {
-      const e = data.enh_state;
-      ENH_SLIDERS.brightness.el.value = Math.round(e.brightness * 100);
-      ENH_SLIDERS.brightness.val.textContent = Math.round(e.brightness * 100);
-      ENH_SLIDERS.contrast.el.value   = Math.round(e.contrast   * 100);
-      ENH_SLIDERS.contrast.val.textContent   = Math.round(e.contrast   * 100);
-      ENH_SLIDERS.sharpen.el.value    = Math.round(e.sharpen    * 100);
-      ENH_SLIDERS.sharpen.val.textContent    = Math.round(e.sharpen    * 100);
-      ENH_SLIDERS.blur.el.value       = Math.round(e.blur       * 2);
-      ENH_SLIDERS.blur.val.textContent       = Math.round(e.blur       * 2);
-      S.enh = {...e};
-    }
-    // Sync geo sliders from server state
-    if (data.geo_state) {
-      const g = data.geo_state;
-      S.geo = {...S.geo, ...g};
-      sRotate.value = g.rotate; vRotate.textContent = g.rotate + '°';
-      sScale.value  = Math.round(g.scale * 100); vScale.textContent = Math.round(g.scale * 100) + '%';
-      $('n-tx').value = g.tx; $('n-ty').value = g.ty;
-    }
-  }
+if($('btn-drag-mode')) $('btn-drag-mode').addEventListener('click', ()=>{ S.dragMode ? exitDragMode() : enterDragMode(); });
+if($('btn-translate')) $('btn-translate').addEventListener('click', async ()=>{
+  S.geo.tx = parseInt($('n-tx')?.value)||0;
+  S.geo.ty = parseInt($('n-ty')?.value)||0;
+  if(S.hasImage){ await pushHistory(); commitGeo(); }
 });
 
 window.addEventListener('resize', ()=>{
@@ -486,8 +524,8 @@ window.addEventListener('resize', ()=>{
 let histData = null;
 let histChannel = 'rgb';
 
-const histModal  = document.getElementById('hist-modal');
-const histCanvas = document.getElementById('hist-canvas');
+const histModal  = $('hist-modal');
+const histCanvas = $('hist-canvas');
 const histCtx    = histCanvas ? histCanvas.getContext('2d') : null;
 
 function drawHistogram(channel) {
@@ -552,7 +590,7 @@ async function openHistogram() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail);
     histData = data;
-    histModal.hidden = false;
+    if(histModal) histModal.hidden = false;
     drawHistogram(histChannel);
   } catch(e) {
     setStatus('✕ ' + e.message, 'error');
@@ -561,19 +599,21 @@ async function openHistogram() {
   }
 }
 
-// Histogram button — now opens modal instead of applying filter
-document.getElementById('btn-histeq').textContent = '📊 Histogram';
-document.getElementById('btn-histeq').onclick = openHistogram;
+if($('btn-histeq')) {
+  $('btn-histeq').textContent = '📊 Histogram EQ';
+  $('btn-histeq').onclick = async () => {
+      if(!S.hasImage) return;
+      await pushHistory();
+      api('histeq', {});
+  };
+}
 
-// Close modal
-document.getElementById('hist-close').addEventListener('click', () => {
-  histModal.hidden = true;
-});
-histModal.addEventListener('click', e => {
+// Hist modal triggers
+if($('hist-close')) $('hist-close').addEventListener('click', () => { histModal.hidden = true; });
+if(histModal) histModal.addEventListener('click', e => {
   if (e.target === histModal) histModal.hidden = true;
 });
 
-// Channel tabs
 document.querySelectorAll('.hist-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.hist-tab').forEach(t => t.classList.remove('active'));
@@ -606,14 +646,12 @@ setupSlider('s-unsharp-r', 'v-unsharp-r', v => v);
 setupSlider('s-unsharp-p', 'v-unsharp-p', v => v);
 
 /* ═══════════════════════════════════════════════
-   RESTORATION — satu filter aktif, slider = preview dari base,
-   Terapkan = commit ke gambar
+   RESTORATION — filter selector
 ═══════════════════════════════════════════════ */
 let activeRestoreFilter = 'gaussian';
 let restoreBase = null;   // snapshot current_image saat masuk/ganti filter
 let restoreTimer;
 
-// Ambil snapshot base dari server saat masuk tab atau ganti filter
 async function snapshotRestoreBase() {
   if (!S.hasImage) return;
   try {
@@ -623,7 +661,6 @@ async function snapshotRestoreBase() {
   } catch(e) {}
 }
 
-// Preview filter aktif dari base (tanpa commit)
 async function previewRestore() {
   if (!S.hasImage) return;
   clearTimeout(restoreTimer);
@@ -639,7 +676,6 @@ async function previewRestore() {
   }, 200);
 }
 
-// Commit filter aktif ke gambar
 async function commitRestore() {
   if (!S.hasImage) return;
   const f = activeRestoreFilter;
@@ -654,7 +690,6 @@ async function commitRestore() {
   if (data) await snapshotRestoreBase(); // update base setelah commit
 }
 
-// Filter selector
 document.querySelectorAll('.restore-filter-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     // revert preview dulu ke base sebelum ganti filter
@@ -664,38 +699,37 @@ document.querySelectorAll('.restore-filter-btn').forEach(btn => {
     document.querySelectorAll('.restore-params').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     activeRestoreFilter = btn.dataset.filter;
-    $('rp-' + activeRestoreFilter).classList.add('active');
+    const rp = $('rp-' + activeRestoreFilter);
+    if(rp) rp.classList.add('active');
 
     await snapshotRestoreBase();
     previewRestore();
   });
 });
 
-// Masuk tab restoration → snapshot
-document.querySelector('[data-tab="restoration"]').addEventListener('click', async () => {
-  await snapshotRestoreBase();
-  previewRestore();
-});
+const restTab = document.querySelector('[data-tab="restoration"]');
+if(restTab) {
+    restTab.addEventListener('click', async () => {
+      await snapshotRestoreBase();
+      previewRestore();
+    });
+}
 
-// Slider listeners — semua trigger previewRestore
 ['s-gauss','s-median','s-mean','s-sp-remove','s-unsharp-r','s-unsharp-p'].forEach(id => {
   const el = $(id);
   if (el) el.addEventListener('input', previewRestore);
 });
 
-// Terapkan
-$('btn-restore-apply').addEventListener('click', commitRestore);
+if($('btn-restore-apply')) $('btn-restore-apply').addEventListener('click', commitRestore);
 
-// Preview ulang (revert ke base lalu preview)
-$('btn-restore-preview').addEventListener('click', async () => {
+if($('btn-restore-preview')) $('btn-restore-preview').addEventListener('click', async () => {
   if (!S.hasImage) return;
   await api('restore/revert', null, 'POST');
   await snapshotRestoreBase();
   previewRestore();
 });
 
-// Add noise
-$('btn-sp-add').addEventListener('click', () => {
+if($('btn-sp-add')) $('btn-sp-add').addEventListener('click', () => {
   const amount = +$('s-sp-add').value / 100;
   pushHistory().then(() => api('restore/add_noise', { amount }));
 });

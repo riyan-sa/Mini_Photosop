@@ -21,14 +21,32 @@
       <div class="logo-text">MINI<span>PS</span></div>
     </div>
     <nav class="toolbar">
-      <label class="btn-primary">
-        <input type="file" id="file-input" accept="image/*" hidden />
-        ⊕ Buka
-      </label>
-      <button class="btn-ghost" id="btn-undo">↩ Undo</button>
-      <button class="btn-ghost" id="btn-reset">↺ Reset</button>
-      <button class="btn-ghost btn-danger" id="btn-clear">✕ Hapus</button>
-      <a class="btn-ghost" id="btn-download" href="/api/download" download="result.png">↓ Unduh</a>
+      <div class="file-menu-container">
+        <button class="file-menu-btn" type="button">File ▾</button>
+        <div class="file-menu-dropdown">
+          <label class="file-menu-item">
+            <input type="file" id="file-input" accept="image/*" hidden />
+            ⊕ Buka Gambar
+          </label>
+          <button class="file-menu-item" type="button" id="btn-reset">↺ Reset ke Awal</button>
+          <a class="file-menu-item" id="btn-download" href="/api/download" download="result.png">↓ Unduh Gambar</a>
+          <button class="file-menu-item btn-danger-item" type="button" id="btn-clear">✕ Hapus Gambar</button>
+        </div>
+      </div>
+
+      <div class="file-menu-container">
+        <button class="file-menu-btn" type="button">Edit ▾</button>
+        <div class="file-menu-dropdown">
+          <button class="file-menu-item menu-item-flex" type="button" id="btn-undo">
+            <span>↩ Undo</span>
+            <span class="shortcut-text">Ctrl+Z</span>
+          </button>
+          <button class="file-menu-item menu-item-flex" type="button" id="btn-redo">
+            <span>↪ Redo</span>
+            <span class="shortcut-text">Shift+Ctrl+Z</span>
+          </button>
+        </div>
+      </div>
     </nav>
   </header>
 

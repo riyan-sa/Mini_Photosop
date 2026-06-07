@@ -1,5 +1,5 @@
 """
-Image Router — v3
+Image Router — v6 (Final Fix Syntax Error Global Variable)
 Geo state pipeline (compose order):
   original → flip_h → flip_v → crop → scale → rotate → translate
   lalu di-stack dengan enhancement di atas hasilnya.
@@ -25,7 +25,7 @@ manager = ImageManager()
 # ── Geo state ─────────────────────────────────────────────────
 geo_state = dict(
     flip_h=False, flip_v=False,
-    crop=None,          # (left, top, right, bottom) piksel, atau None
+    crop=None,
     scale=1.0,
     rotate=0.0,
     tx=0, ty=0,
@@ -41,7 +41,6 @@ def img_to_b64(img):
     return base64.b64encode(buf.getvalue()).decode()
 
 def compose_geo(base: Image.Image) -> Image.Image:
-    """Terapkan semua geo ops secara berurutan dari original."""
     img = base.copy()
     if geo_state["flip_h"]: img = GeometricTransformer.flip_horizontal(img)
     if geo_state["flip_v"]: img = GeometricTransformer.flip_vertical(img)
@@ -72,8 +71,7 @@ def rebuild(msg: str) -> dict:
 
 def reset_states():
     global geo_state, enh_state
-    geo_state = dict(flip_h=False, flip_v=False, crop=None,
-                     scale=1.0, rotate=0.0, tx=0, ty=0)
+    geo_state = dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0)
     enh_state = dict(brightness=1.0, contrast=1.0, sharpen=1.0, blur=0.0)
 
 # ── Upload ────────────────────────────────────────────────────
@@ -87,6 +85,11 @@ async def upload_image(file: UploadFile = File(...)):
     manager.current_image  = img.copy()
     manager.file_path      = file.filename
     reset_states()
+    
+    global undo_history, redo_history
+    undo_history.clear()
+    redo_history.clear()
+    
     w, h = img.size
     return {"message": f"'{file.filename}' diupload.",
             "image": img_to_b64(img),
@@ -110,10 +113,8 @@ def histeq():
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
     geo_img = compose_geo(manager.original_image)
     eq_img  = ImageEnhancer.histogram_equalization(geo_img)
-    # simpan hasilnya sebagai original baru agar pipeline tetap konsisten
     manager.original_image = eq_img.copy()
-    geo_state.update(dict(flip_h=False, flip_v=False, crop=None,
-                          scale=1.0, rotate=0.0, tx=0, ty=0))
+    geo_state.update(dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0))
     return rebuild("Histogram equalization diterapkan.")
 
 # ── Reset ─────────────────────────────────────────────────────
@@ -122,6 +123,11 @@ def reset_image():
     img = manager.reset_image()
     if img is None: raise HTTPException(400, "Belum ada gambar.")
     reset_states()
+    
+    global undo_history, redo_history
+    undo_history.clear()
+    redo_history.clear()
+    
     w, h = img.size
     return {"message": "Reset ke gambar awal.",
             "image": img_to_b64(img),
@@ -137,11 +143,11 @@ def download_image():
     return StreamingResponse(buf, media_type="image/png",
         headers={"Content-Disposition": "attachment; filename=result.png"})
 
-# ── Geo state endpoint — commit semua geo sekaligus ───────────
+# ── Geo state endpoint ────────────────────────────────────────
 class GeoCommitParams(BaseModel):
     flip_h:  bool             = False
     flip_v:  bool             = False
-    crop:    list | None      = None   # [l,t,r,b] atau null
+    crop:    list | None      = None
     scale:   float            = 1.0
     rotate:  float            = 0.0
     tx:      int              = 0
@@ -159,15 +165,12 @@ def geo_commit(params: GeoCommitParams):
     geo_state["ty"]      = params.ty
     return rebuild("Geometric diterapkan.")
 
-# ── Crop apply (khusus, karena koordinat dalam piksel geo_img) ─
 class CropParams(BaseModel):
     left: int; top: int; right: int; bottom: int
 
 @router.post("/crop")
 def crop_image(params: CropParams):
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
-    # crop diterapkan setelah flip, sebelum scale/rotate/translate
-    # hitung ukuran geo_img sampai tahap flip saja
     img = manager.original_image.copy()
     if geo_state["flip_h"]: img = GeometricTransformer.flip_horizontal(img)
     if geo_state["flip_v"]: img = GeometricTransformer.flip_vertical(img)
@@ -179,12 +182,6 @@ def crop_image(params: CropParams):
     geo_state["crop"] = (l, t, r, b)
     return rebuild("Crop diterapkan.")
 
-# ── Flip (toggle via geo_commit) — kept for direct call ───────
-@router.post("/flip")
-def flip_image(params: BaseModel):
-    pass  # handled via geo_commit
-
-# ── Resize ────────────────────────────────────────────────────
 class ResizeParams(BaseModel):
     width: int; height: int
 
@@ -194,42 +191,78 @@ def resize_image(params: ResizeParams):
     from modules.geometric_transformer import GeometricTransformer
     geo_img = compose_geo(manager.original_image)
     img = GeometricTransformer.resize(geo_img, params.width, params.height)
-    # update original so pipeline stays consistent
     manager.original_image = img.copy()
     geo_state.update(dict(flip_h=False,flip_v=False,crop=None,scale=1.0,rotate=0.0,tx=0,ty=0))
     return rebuild(f"Resize ke {params.width}×{params.height}.")
 
-# ── Undo ──────────────────────────────────────────────────────
-history = []   # list of (geo_state_snapshot, enh_state_snapshot, original_snapshot)
+# ── Undo / Redo History ────────────────────────────────────────────────
+undo_history = []
+redo_history = []
 MAX_HISTORY = 20
 
-def push_history():
+def _save_to_history_stack():
     import copy
-    history.append((
+    global undo_history, redo_history
+    undo_history.append((
         copy.deepcopy(geo_state),
         copy.deepcopy(enh_state),
-        manager.original_image.copy(),
+        manager.original_image.copy() if manager.original_image else None
     ))
-    if len(history) > MAX_HISTORY:
-        history.pop(0)
+    if len(undo_history) > MAX_HISTORY:
+        undo_history.pop(0)
+    redo_history.clear()
 
 @router.post("/push_history")
 def push_history_endpoint():
-    """Dipanggil frontend sebelum setiap operasi destructive."""
+    """Dipanggil frontend sebelum operasi destructive/slider."""
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
-    push_history()
-    return {"message": "History saved.", "history_len": len(history)}
+    _save_to_history_stack()
+    return {"message": "History saved."}
 
 @router.post("/undo")
 def undo():
-    if not history: raise HTTPException(400, "Tidak ada riwayat untuk di-undo.")
-    global geo_state, enh_state
-    geo_snap, enh_snap, orig_snap = history.pop()
+    global geo_state, enh_state, redo_history, undo_history
+    # Cek histori SETELAH deklarasi global
+    if not undo_history: raise HTTPException(400, "Tidak ada riwayat untuk di-undo.")
+    import copy
+    
+    # Simpan current state ke redo_history sebelum mundur
+    redo_history.append((
+        copy.deepcopy(geo_state),
+        copy.deepcopy(enh_state),
+        manager.original_image.copy()
+    ))
+    
+    geo_snap, enh_snap, orig_snap = undo_history.pop()
     geo_state.update(geo_snap)
     enh_state.update(enh_snap)
     manager.original_image = orig_snap.copy()
+    
     result = rebuild("Undo berhasil.")
-    # Include states so frontend can sync UI
+    result["enh_state"] = dict(enh_state)
+    result["geo_state"] = dict(geo_state)
+    return result
+
+@router.post("/redo")
+def redo():
+    global geo_state, enh_state, redo_history, undo_history
+    # Cek histori SETELAH deklarasi global
+    if not redo_history: raise HTTPException(400, "Tidak ada riwayat untuk di-redo.")
+    import copy
+    
+    # Simpan current state ke undo_history sebelum maju
+    undo_history.append((
+        copy.deepcopy(geo_state),
+        copy.deepcopy(enh_state),
+        manager.original_image.copy()
+    ))
+    
+    geo_snap, enh_snap, orig_snap = redo_history.pop()
+    geo_state.update(geo_snap)
+    enh_state.update(enh_snap)
+    manager.original_image = orig_snap.copy()
+    
+    result = rebuild("Redo berhasil.")
     result["enh_state"] = dict(enh_state)
     result["geo_state"] = dict(geo_state)
     return result
@@ -245,7 +278,6 @@ def get_histogram():
     for i, ch in enumerate(['r', 'g', 'b']):
         hist, _ = np.histogram(arr[:,:,i].flatten(), bins=256, range=(0,256))
         result[ch] = hist.tolist()
-    # grayscale
     gray = np.array(img.convert("L"))
     hist_gray, _ = np.histogram(gray.flatten(), bins=256, range=(0,256))
     result['gray'] = hist_gray.tolist()
@@ -256,45 +288,16 @@ def get_histogram():
 # ═══════════════════════════════════════════════════════════
 from modules.image_restorer import ImageRestorer
 
-class GaussianParams(BaseModel):
-    radius: float = 2.0
-
-class MedianParams(BaseModel):
-    size: int = 3
-
-class SaltPepperParams(BaseModel):
-    strength: int = 2
-
-class MeanParams(BaseModel):
-    size: int = 3
-
-class UnsharpParams(BaseModel):
-    radius:    float = 2.0
-    percent:   int   = 150
-    threshold: int   = 3
-
-class NoiseParams(BaseModel):
-    amount: float = 0.05
-
-
-def restoration_response(img: Image.Image, msg: str) -> dict:
-    geo_img = img.copy()
-    # simpan sebagai geo_image baru, reset geo state
-    global geo_image
-    geo_image = geo_img
-    final = compose_enh(geo_img)
-    manager.update_current(final)
-    return {"message": msg, "image": img_to_b64(final), "info": manager.get_info()}
-
+class GaussianParams(BaseModel): radius: float = 2.0
+class MedianParams(BaseModel): size: int = 3
+class SaltPepperParams(BaseModel): strength: int = 2
+class MeanParams(BaseModel): size: int = 3
+class UnsharpParams(BaseModel): radius: float = 2.0; percent: int = 150; threshold: int = 3
+class NoiseParams(BaseModel): amount: float = 0.05
 
 def commit_restoration(img: Image.Image, msg: str) -> dict:
-    """
-    Restoration langsung mengubah original_image dan reset geo state,
-    supaya hasilnya permanen dan tidak di-override pipeline geo.
-    """
     manager.original_image = img.copy()
-    geo_state.update(dict(flip_h=False, flip_v=False, crop=None,
-                          scale=1.0, rotate=0.0, tx=0, ty=0))
+    geo_state.update(dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0))
     return rebuild(msg)
 
 @router.post("/restore/gaussian")
@@ -334,11 +337,10 @@ def add_noise(params: NoiseParams):
     return commit_restoration(img, f"Noise {int(params.amount*100)}% ditambahkan.")
 
 # ── Restoration snapshot/revert/preview ───────────────────────
-_restore_base = None   # snapshot sebelum preview
+_restore_base = None
 
 @router.post("/restore/snapshot")
 def restore_snapshot():
-    """Simpan current_image sebagai base untuk preview restoration."""
     global _restore_base
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
     _restore_base = manager.current_image.copy()
@@ -346,7 +348,6 @@ def restore_snapshot():
 
 @router.post("/restore/revert")
 def restore_revert():
-    """Kembalikan gambar ke snapshot base (hapus preview)."""
     global _restore_base
     if _restore_base is None: return {"ok": True}
     manager.original_image = _restore_base.copy()
@@ -354,7 +355,6 @@ def restore_revert():
     result = rebuild("Revert ke base.")
     return result
 
-# Preview endpoints — terapkan dari base tanpa commit ke original
 @router.post("/restore/preview/gaussian")
 def preview_gaussian(params: GaussianParams):
     if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
