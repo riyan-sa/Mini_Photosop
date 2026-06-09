@@ -1,29 +1,21 @@
 /* ══════════════════════════════════════════════════════════
-   Mini Photoshop — app.js (FINAL FIX: Undo/Redo/Tab/Shortcuts)
-   Live preview via CSS transform, commit on release
+   Mini Photoshop — app.js (v11 - Ultimate Realtime Sync)
    ══════════════════════════════════════════════════════════ */
 
-/* ─── State ─────────────────────────────────────────────── */
 const S = {
-  hasImage: false,
-  imgW: 0, imgH: 0,
-  // geo state (mirrors server)
-  geo: { flip_h: false, flip_v: false, crop: null,
-         scale: 1.0, rotate: 0.0, tx: 0, ty: 0 },
-  // enh state
+  hasImage: false, imgW: 0, imgH: 0,
+  geo: { flip_h: false, flip_v: false, crop: null, scale: 1.0, rotate: 0.0, tx: 0, ty: 0 },
   enh: { brightness: 1.0, contrast: 1.0, sharpen: 1.0, blur: 0.0 },
-  cropMode: false,
-  resizeMode: false,
-  dragMode: false,   // translation drag
+  cropMode: false, resizeMode: false, dragMode: false,
+  activeSegFilter: 'threshold'
 };
 
-/* ─── Elements ───────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
 const fileInput    = $('file-input');
 const imgBefore    = $('img-before');
 const imgAfter     = $('img-after');
 const emptyState   = $('empty-state');
-const loading      = $('loading') || document.querySelector('.loading-overlay');
+const loading      = $('loading');
 const statusBar    = $('status-bar');
 const imgInfo      = $('img-info');
 const beforeWrap   = $('before-wrap');
@@ -40,27 +32,54 @@ const ENH_SLIDERS = {
   blur:       { el: $('s-blur'),       val: $('v-blur'),       default: 0   },
 };
 
-/* ─── Helpers ────────────────────────────────────────────── */
-const setStatus = (msg, type='') => {
-  if (statusBar) {
-    statusBar.textContent = msg;
-    statusBar.className = 'status-bar ' + type;
-  }
-};
+const setStatus = (msg, type='') => { if(statusBar) { statusBar.textContent = msg; statusBar.className = 'status-bar ' + type; } };
 const showLoading = show => { if(loading) loading.style.display = show ? 'flex' : 'none'; };
+
+function resetEnhSliders() {
+  Object.entries(ENH_SLIDERS).forEach(([k, s]) => {
+    if (s.el) {
+      s.el.value = s.default;
+      if (s.val) s.val.textContent = s.default;
+    }
+  });
+  S.enh = { brightness: 1.0, contrast: 1.0, sharpen: 1.0, blur: 0.0 };
+}
+
+function resetGeoUI() {
+  S.geo = { flip_h: false, flip_v: false, crop: null, scale: 1.0, rotate: 0.0, tx: 0, ty: 0 };
+  if ($('s-rotate')) { $('s-rotate').value = 0; $('v-rotate').textContent = '0°'; }
+  if ($('s-scale')) { 
+    $('s-scale').value = 100; 
+    $('v-scale').textContent = '100%'; 
+    if ($('n-scale')) $('n-scale').value = 100;
+  }
+  if ($('n-tx')) $('n-tx').value = 0;
+  if ($('n-ty')) $('n-ty').value = 0;
+  if (cropOverlay) cropOverlay.hidden = true;
+  if (cropActions) cropActions.hidden = true;
+  if (resizeOverlay) resizeOverlay.hidden = true;
+  S.cropMode = false;
+  S.resizeMode = false;
+  S.dragMode = false;
+}
 
 function showImage(b64, target) {
   if(!target) return;
   target.src = 'data:image/jpeg;base64,' + b64;
-  target.style.display = 'block';
-  target.style.transform = '';   // clear CSS preview transform on new image
+  target.style.display = 'block'; // 👈 Mengunci agar gambar AFTER pasti tampil ke layar monitor
+  target.style.transform = '';   
+  
+  // Amankan pemanggilan histogram realtime agar tidak membuat hang rendering utama
+  if ($('hist-modal') && !$('hist-modal').hidden) {
+      triggerRealtimeHistogram();
+  }
 }
 
 function updateInfo(info) {
-  if (!info?.width) return;
+  if (!info?.width || !imgInfo) return;
   S.imgW = info.width; S.imgH = info.height;
-  if(imgInfo) imgInfo.textContent = `${info.width} × ${info.height}px · ${info.mode}`;
-  if($('n-width')) $('n-width').value  = info.width;
+  imgInfo.textContent = `${info.width} × ${info.height}px · ${info.mode}`;
+  if($('n-width')) $('n-width').value = info.width;
   if($('n-height')) $('n-height').value = info.height;
 }
 
@@ -73,47 +92,33 @@ function getEnhValues() {
   };
 }
 
-function resetEnhSliders() {
-  Object.values(ENH_SLIDERS).forEach(s => {
-    if(s.el) s.el.value = s.default;
-    if(s.val) s.val.textContent = s.default;
-  });
-  S.enh = { brightness:1.0, contrast:1.0, sharpen:1.0, blur:0.0 };
-}
-
-function resetGeoUI() {
-  if($('s-rotate')) { $('s-rotate').value = 0;  $('v-rotate').textContent = '0°'; }
-  if($('s-scale')) { $('s-scale').value  = 100; $('v-scale').textContent  = '100%'; }
-  if($('n-tx')) { $('n-tx').value = 0; $('n-ty').value = 0; }
-  S.geo = { flip_h:false, flip_v:false, crop:null, scale:1.0, rotate:0.0, tx:0, ty:0 };
-  if(imgAfter) {
-    imgAfter.style.transform = '';
-    imgAfter.style.transformOrigin = '';
+function syncStateAfterUndoRedo(data) {
+  if (data.enh_state) {
+    const e = data.enh_state;
+    if(ENH_SLIDERS.brightness.el) {
+      ENH_SLIDERS.brightness.el.value = Math.round(e.brightness * 100); ENH_SLIDERS.brightness.val.textContent = Math.round(e.brightness * 100);
+      ENH_SLIDERS.contrast.el.value   = Math.round(e.contrast * 100);   ENH_SLIDERS.contrast.val.textContent   = Math.round(e.contrast * 100);
+      ENH_SLIDERS.sharpen.el.value    = Math.round(e.sharpen * 100);    ENH_SLIDERS.sharpen.val.textContent    = Math.round(e.sharpen * 100);
+      ENH_SLIDERS.blur.el.value       = Math.round(e.blur * 2);         ENH_SLIDERS.blur.val.textContent       = Math.round(e.blur * 2);
+    }
+    S.enh = {...e};
+  }
+  if (data.geo_state) {
+    const g = data.geo_state; S.geo = {...S.geo, ...g};
+    if($('s-rotate')) { 
+      $('s-rotate').value = g.rotate; 
+      if($('n-rotate')) $('n-rotate').value = g.rotate;
+    }
+    if($('s-scale')) { 
+      $('s-scale').value  = Math.round(g.scale * 100); 
+      $('v-scale').textContent = Math.round(g.scale * 100) + '%'; 
+      if($('n-scale')) $('n-scale').value = Math.round(g.scale * 100); 
+    }
+    if($('n-tx')) { $('n-tx').value = g.tx; $('n-ty').value = g.ty; }
   }
 }
 
-function clearCanvas() {
-  if(imgBefore) { imgBefore.style.display = 'none'; imgBefore.src = ''; }
-  if(imgAfter) { imgAfter.style.display = 'none'; imgAfter.src = ''; }
-  if(emptyState) emptyState.style.display = '';
-  S.hasImage = false;
-  if(imgInfo) imgInfo.textContent = '—';
-  resetEnhSliders(); resetGeoUI();
-  exitCropMode(); exitResizeMode(); exitDragMode();
-}
-
-/* ─── Tabs ───────────────────────────────────────────────── */
-document.querySelectorAll('.tab').forEach(tab =>
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    tab.classList.add('active');
-    const target = $('tab-' + tab.dataset.tab);
-    if(target) target.classList.add('active');
-  })
-);
-
-/* ─── API ────────────────────────────────────────────────── */
+/* ─── API BASE ───────────────────────────────────────────── */
 async function api(endpoint, body=null, method='POST') {
   showLoading(true);
   try {
@@ -124,78 +129,27 @@ async function api(endpoint, body=null, method='POST') {
     if (!res.ok) throw new Error(data.detail || 'Error');
     if(data.image) showImage(data.image, imgAfter);
     if(data.info) updateInfo(data.info);
+    if(data.geo_state || data.enh_state) syncStateAfterUndoRedo(data);
     setStatus('✓ ' + data.message, 'ok');
     return data;
-  } catch(e) {
-    setStatus('✕ ' + e.message, 'error');
-    return null;
-  } finally { showLoading(false); }
+  } catch(e) { setStatus('✕ ' + e.message, 'error'); return null; } finally { showLoading(false); }
 }
 
-function commitGeo() {
-  return api('geo_commit', { ...S.geo, crop: S.geo.crop ? [...S.geo.crop] : null });
-}
+function commitGeo() { return api('geo_commit', { ...S.geo, crop: S.geo.crop ? [...S.geo.crop] : null }); }
+async function pushHistory() { try { await fetch('/api/push_history', {method:'POST'}); } catch(e) {} }
 
-async function pushHistory() {
-  try { await fetch('/api/push_history', {method:'POST'}); } catch(e) {}
-}
+/* ─── DROPDOWN MODAL TRIGGERS ────────────────────────────── */
+$('btn-open-transform')?.addEventListener('click', () => { if (!S.hasImage) return; $('transform-modal').hidden = false; });
+$('btn-open-seg')?.addEventListener('click', () => { if (!S.hasImage) return; $('segmentation-modal').hidden = false; });
+$('btn-open-restoration')?.addEventListener('click', () => { if (!S.hasImage) return; $('restoration-modal').hidden = false; });
 
-/* ─── Upload ─────────────────────────────────────────────── */
-async function uploadImage(file) {
-  const form = new FormData();
-  form.append('file', file);
-  showLoading(true);
-  try {
-    const res  = await fetch('/api/upload', { method:'POST', body:form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail);
-    if(emptyState) emptyState.style.display = 'none';
-    showImage(data.image, imgBefore);
-    showImage(data.image, imgAfter);
-    S.hasImage = true;
-    updateInfo(data.info);
-    resetEnhSliders(); resetGeoUI();
-    setStatus(`✓ ${file.name} diupload.`, 'ok');
-  } catch(e) { setStatus('✕ ' + e.message, 'error'); }
-  finally { showLoading(false); }
-}
+$('transform-close').onclick = () => { $('transform-modal').hidden = true; };
+$('segmentation-close').onclick = async () => { $('segmentation-modal').hidden = true; await api('restore/revert', null, 'POST'); };
+$('restoration-close').onclick = async () => { $('restoration-modal').hidden = true; await api('restore/revert', null, 'POST'); };
 
-/* ─── HISTORY UNDO/REDO & SHORTCUTS ──────────────────────── */
-function syncStateAfterUndoRedo(data) {
-  if (data.enh_state) {
-    const e = data.enh_state;
-    if(ENH_SLIDERS.brightness.el) {
-      ENH_SLIDERS.brightness.el.value = Math.round(e.brightness * 100);
-      ENH_SLIDERS.brightness.val.textContent = Math.round(e.brightness * 100);
-      ENH_SLIDERS.contrast.el.value   = Math.round(e.contrast   * 100);
-      ENH_SLIDERS.contrast.val.textContent   = Math.round(e.contrast   * 100);
-      ENH_SLIDERS.sharpen.el.value    = Math.round(e.sharpen    * 100);
-      ENH_SLIDERS.sharpen.val.textContent    = Math.round(e.sharpen    * 100);
-      ENH_SLIDERS.blur.el.value       = Math.round(e.blur       * 2);
-      ENH_SLIDERS.blur.val.textContent       = Math.round(e.blur       * 2);
-    }
-    S.enh = {...e};
-  }
-  if (data.geo_state) {
-    const g = data.geo_state;
-    S.geo = {...S.geo, ...g};
-    if($('s-rotate')) { $('s-rotate').value = g.rotate; $('v-rotate').textContent = g.rotate + '°'; }
-    if($('s-scale')) { $('s-scale').value  = Math.round(g.scale * 100); $('v-scale').textContent = Math.round(g.scale * 100) + '%'; }
-    if($('n-tx')) { $('n-tx').value = g.tx; $('n-ty').value = g.ty; }
-  }
-}
-
-async function performUndo() {
-  if (!S.hasImage) return;
-  const data = await api('undo');
-  if (data) syncStateAfterUndoRedo(data);
-}
-
-async function performRedo() {
-  if (!S.hasImage) return;
-  const data = await api('redo');
-  if (data) syncStateAfterUndoRedo(data);
-}
+/* ─── SHORTCUTS & UNDO / REDO ────────────────────────────── */
+async function performUndo() { if (!S.hasImage) return; const data = await api('undo'); if (data) syncStateAfterUndoRedo(data); }
+async function performRedo() { if (!S.hasImage) return; const data = await api('redo'); if (data) syncStateAfterUndoRedo(data); }
 
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
@@ -203,533 +157,708 @@ document.addEventListener('keydown', (e) => {
   else if (e.ctrlKey && key === 'z') { e.preventDefault(); performUndo(); }
   else if (e.ctrlKey && key === 'y') { e.preventDefault(); performRedo(); }
 });
+if($('btn-undo')) $('btn-undo').onclick = (e) => { e.preventDefault(); performUndo(); };
+if($('btn-redo')) $('btn-redo').onclick = (e) => { e.preventDefault(); performRedo(); };
 
-// Dropdown menu file & edit integration
-if($('btn-undo')) $('btn-undo').addEventListener('click', (e) => { e.preventDefault(); performUndo(); });
-if($('btn-redo')) $('btn-redo').addEventListener('click', (e) => { e.preventDefault(); performRedo(); });
+/* ─── UPLOAD / DYNAMICS ──────────────────────────────────── */
+if(fileInput) fileInput.onchange = e => { if(e.target.files[0]) uploadImage(e.target.files[0]); e.target.value=''; };
+if(beforeWrap) beforeWrap.onclick = ()=>{ if(!S.hasImage && fileInput) fileInput.click(); };
+if($('btn-clear')) $('btn-clear').onclick = ()=>{ if(S.hasImage){ clearCanvas(); setStatus('Workspace dibersihkan.', 'ok'); } };
 
+async function uploadImage(file) {
+  const form = new FormData(); 
+  form.append('file', file); 
+  showLoading(true);
+  try {
+    const res  = await fetch('/api/upload', { method:'POST', body:form }); 
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail);
+    
+    if(emptyState) emptyState.style.display = 'none';
+    
+    // Tampilkan paksa elemen gambarnya di layar monitor
+    if(imgBefore) { imgBefore.src = 'data:image/jpeg;base64,' + data.image; imgBefore.style.display = 'block'; }
+    if(imgAfter)  { imgAfter.src  = 'data:image/jpeg;base64,' + data.image; imgAfter.style.display  = 'block'; }
+    
+    S.hasImage = true; 
+    updateInfo(data.info); 
+    resetEnhSliders(); 
+    resetGeoUI(); 
+    setStatus(`✓ ${file.name} diupload.`, 'ok');
+    
+    // Update histogram HANYA jika panel melayangnya sedang aktif terbuka
+    if ($('hist-modal') && !$('hist-modal').hidden) {
+        triggerRealtimeHistogram();
+    }
+  } catch(e) { 
+    setStatus('✕ ' + e.message, 'error'); 
+  } finally { 
+    showLoading(false); 
+  }
+}
 
-/* ─── Enhancement — live on input, commit on change ─────── */
+async function triggerRealtimeHistogram() {
+  // Cek ketat, jika gambar belum di-load atau panel modal sedang ditutup, langsung batalkan request
+  if (!S.hasImage || !$('hist-modal') || $('hist-modal').hidden) return;
+  try {
+    const res = await fetch('/api/histogram'); 
+    const data = await res.json();
+    if (res.ok) { 
+        histData = data; 
+        drawHistogram(histChannel); 
+    }
+  } catch(e) {
+    console.warn("Histogram belum siap menerima state gambar baru.");
+  }
+}
+
+if($('btn-reset')) $('btn-reset').onclick = async ()=>{
+  if(!S.hasImage) return; await pushHistory();
+  const data = await api('reset', null, 'GET'); if(data){ showImage(data.image, imgBefore); resetGeoUI(); }
+};
+
+// Pasang event klik rotasi, scale, flip, crop, & resize
+if($('btn-flip-h')) $('btn-flip-h').onclick = ()=>{ S.geo.flip_h=!S.geo.flip_h; if(S.hasImage) pushHistory().then(()=>commitGeo()); };
+if($('btn-flip-v')) $('btn-flip-v').onclick = ()=>{ S.geo.flip_v=!S.geo.flip_v; if(S.hasImage) pushHistory().then(()=>commitGeo()); };
+if($('btn-resize')) $('btn-resize').onclick = async ()=>{
+  const w=parseInt($('n-width').value), h=parseInt($('n-height').value);
+  if(!w||!h){ setStatus('Isi width dan height.','error'); return; }
+  await pushHistory(); api('resize',{width:w,height:h});
+};
+
+/* ─── ROTATE LOGIC ─── */
+let rotateTimer;
+$('s-rotate')?.addEventListener('input', (e) => {
+  const val = parseInt(e.target.value);
+  if ($('n-rotate')) $('n-rotate').value = val;
+  S.geo.rotate = val;
+  clearTimeout(rotateTimer);
+  rotateTimer = setTimeout(() => {
+    commitGeo();
+  }, 100);
+});
+$('n-rotate')?.addEventListener('input', (e) => {
+  let val = parseInt(e.target.value);
+  if (isNaN(val)) return;
+  val = Math.max(0, Math.min(val, 360));
+  if ($('s-rotate')) $('s-rotate').value = val;
+  S.geo.rotate = val;
+  clearTimeout(rotateTimer);
+  rotateTimer = setTimeout(() => {
+    commitGeo();
+  }, 100);
+});
+
+const applyQuickRotation = async (degChange) => {
+  if (!S.hasImage) return;
+  S.geo.rotate = (S.geo.rotate + degChange + 360) % 360;
+  if ($('s-rotate')) $('s-rotate').value = S.geo.rotate;
+  if ($('n-rotate')) $('n-rotate').value = S.geo.rotate;
+  await pushHistory();
+  commitGeo();
+};
+
+if ($('btn-rot-90-ccw')) $('btn-rot-90-ccw').onclick = () => applyQuickRotation(-90);
+if ($('btn-rot-90-cw')) $('btn-rot-90-cw').onclick = () => applyQuickRotation(90);
+if ($('btn-rot-180')) $('btn-rot-180').onclick = () => applyQuickRotation(180);
+
+if ($('btn-rotate-reset')) $('btn-rotate-reset').onclick = async () => {
+  if (!S.hasImage) return;
+  S.geo.rotate = 0;
+  if ($('s-rotate')) $('s-rotate').value = 0;
+  if ($('n-rotate')) $('n-rotate').value = 0;
+  await pushHistory();
+  commitGeo();
+};
+
+/* ─── SCALE LOGIC ─── */
+let scaleTimer;
+$('s-scale')?.addEventListener('input', (e) => {
+  const val = parseInt(e.target.value);
+  $('v-scale').textContent = val + '%';
+  if ($('n-scale')) $('n-scale').value = val;
+  S.geo.scale = Math.max(1, val) / 100;
+  clearTimeout(scaleTimer);
+  scaleTimer = setTimeout(() => {
+    commitGeo();
+  }, 100);
+});
+$('n-scale')?.addEventListener('input', (e) => {
+  let val = parseInt(e.target.value);
+  if (isNaN(val)) return;
+  val = Math.max(0, Math.min(val, 100));
+  if ($('s-scale')) $('s-scale').value = val;
+  $('v-scale').textContent = val + '%';
+  S.geo.scale = Math.max(1, val) / 100;
+  clearTimeout(scaleTimer);
+  scaleTimer = setTimeout(() => {
+    commitGeo();
+  }, 100);
+});
+if ($('btn-scale-reset')) $('btn-scale-reset').onclick = async () => {
+  if (!S.hasImage) return;
+  S.geo.scale = 1.0;
+  $('s-scale').value = 100;
+  $('v-scale').textContent = '100%';
+  if ($('n-scale')) $('n-scale').value = 100;
+  await pushHistory();
+  commitGeo();
+};
+
+/* ─── CROP MOUSE DRAG & RESIZE LOGIC ─── */
+function getRenderedImageRect(img) {
+  if (!img || !img.complete || img.naturalWidth === 0) return null;
+  const rect = img.getBoundingClientRect();
+  const wrapRect = img.parentElement.getBoundingClientRect();
+  
+  const imgRatio = img.naturalWidth / img.naturalHeight;
+  const containerRatio = rect.width / rect.height;
+  
+  let renderW, renderH, renderX, renderY;
+  if (imgRatio > containerRatio) {
+    renderW = rect.width;
+    renderH = rect.width / imgRatio;
+    renderX = rect.left - wrapRect.left;
+    renderY = (rect.height - renderH) / 2 + (rect.top - wrapRect.top);
+  } else {
+    renderH = rect.height;
+    renderW = rect.height * imgRatio;
+    renderY = rect.top - wrapRect.top;
+    renderX = (rect.width - renderW) / 2 + (rect.left - wrapRect.left);
+  }
+  
+  return {
+    left: renderX,
+    top: renderY,
+    width: renderW,
+    height: renderH,
+    naturalWidth: img.naturalWidth,
+    naturalHeight: img.naturalHeight
+  };
+}
+
+function updateCropOverlayPosition() {
+  const rect = getRenderedImageRect(imgAfter);
+  if (!rect) return;
+  cropOverlay.style.left = rect.left + 'px';
+  cropOverlay.style.top = rect.top + 'px';
+  cropOverlay.style.width = rect.width + 'px';
+  cropOverlay.style.height = rect.height + 'px';
+  
+  if (parseFloat(cropBox.style.width) === 0 || !cropBox.style.width) {
+    cropBox.style.left = (rect.width * 0.1) + 'px';
+    cropBox.style.top = (rect.height * 0.1) + 'px';
+    cropBox.style.width = (rect.width * 0.8) + 'px';
+    cropBox.style.height = (rect.height * 0.8) + 'px';
+  }
+  updateCropMasks();
+}
+
+function updateCropMasks() {
+  const boxL = parseFloat(cropBox.style.left) || 0;
+  const boxT = parseFloat(cropBox.style.top) || 0;
+  const boxW = parseFloat(cropBox.style.width) || 0;
+  const boxH = parseFloat(cropBox.style.height) || 0;
+  
+  const overlayW = parseFloat(cropOverlay.style.width) || 0;
+  const overlayH = parseFloat(cropOverlay.style.height) || 0;
+  
+  if ($('crop-mask-top')) {
+    $('crop-mask-top').style.left = '0px';
+    $('crop-mask-top').style.top = '0px';
+    $('crop-mask-top').style.width = overlayW + 'px';
+    $('crop-mask-top').style.height = boxT + 'px';
+  }
+  if ($('crop-mask-bottom')) {
+    $('crop-mask-bottom').style.left = '0px';
+    $('crop-mask-bottom').style.top = (boxT + boxH) + 'px';
+    $('crop-mask-bottom').style.width = overlayW + 'px';
+    $('crop-mask-bottom').style.height = (overlayH - boxT - boxH) + 'px';
+  }
+  if ($('crop-mask-left')) {
+    $('crop-mask-left').style.left = '0px';
+    $('crop-mask-left').style.top = boxT + 'px';
+    $('crop-mask-left').style.width = boxL + 'px';
+    $('crop-mask-left').style.height = boxH + 'px';
+  }
+  if ($('crop-mask-right')) {
+    $('crop-mask-right').style.left = (boxL + boxW) + 'px';
+    $('crop-mask-right').style.top = boxT + 'px';
+    $('crop-mask-right').style.width = (overlayW - boxL - boxW) + 'px';
+    $('crop-mask-right').style.height = boxH + 'px';
+  }
+}
+
+let isCropDragging = false;
+let cropDragStartX, cropDragStartY, cropDragStartLeft, cropDragStartTop;
+
+cropBox.addEventListener('mousedown', (e) => {
+  if (e.target.classList.contains('crop-handle')) return;
+  isCropDragging = true;
+  cropDragStartX = e.clientX;
+  cropDragStartY = e.clientY;
+  cropDragStartLeft = parseFloat(cropBox.style.left) || 0;
+  cropDragStartTop = parseFloat(cropBox.style.top) || 0;
+  document.addEventListener('mousemove', onCropDrag);
+  document.addEventListener('mouseup', onStopCropDrag);
+});
+
+function onCropDrag(e) {
+  if (!isCropDragging) return;
+  const dx = e.clientX - cropDragStartX;
+  const dy = e.clientY - cropDragStartY;
+  
+  const overlayW = parseFloat(cropOverlay.style.width) || 0;
+  const overlayH = parseFloat(cropOverlay.style.height) || 0;
+  const boxW = parseFloat(cropBox.style.width) || 0;
+  const boxH = parseFloat(cropBox.style.height) || 0;
+  
+  let newL = cropDragStartLeft + dx;
+  let newT = cropDragStartTop + dy;
+  
+  newL = Math.max(0, Math.min(newL, overlayW - boxW));
+  newT = Math.max(0, Math.min(newT, overlayH - boxH));
+  
+  cropBox.style.left = newL + 'px';
+  cropBox.style.top = newT + 'px';
+  updateCropMasks();
+}
+
+function onStopCropDrag() {
+  isCropDragging = false;
+  document.removeEventListener('mousemove', onCropDrag);
+  document.removeEventListener('mouseup', onStopCropDrag);
+}
+
+let isCropResizing = false;
+let activeHandle = null;
+let cropResizeStartLeft, cropResizeStartTop, cropResizeStartWidth, cropResizeStartHeight;
+
+cropBox.addEventListener('mousedown', (e) => {
+  if (!e.target.classList.contains('crop-handle')) return;
+  isCropResizing = true;
+  activeHandle = e.target.dataset.pos;
+  cropDragStartX = e.clientX;
+  cropDragStartY = e.clientY;
+  cropResizeStartLeft = parseFloat(cropBox.style.left) || 0;
+  cropResizeStartTop = parseFloat(cropBox.style.top) || 0;
+  cropResizeStartWidth = parseFloat(cropBox.style.width) || 0;
+  cropResizeStartHeight = parseFloat(cropBox.style.height) || 0;
+  e.stopPropagation();
+  document.addEventListener('mousemove', onCropResize);
+  document.addEventListener('mouseup', onStopCropResize);
+});
+
+function onCropResize(e) {
+  if (!isCropResizing) return;
+  const dx = e.clientX - cropDragStartX;
+  const dy = e.clientY - cropDragStartY;
+  
+  const overlayW = parseFloat(cropOverlay.style.width) || 0;
+  const overlayH = parseFloat(cropOverlay.style.height) || 0;
+  
+  let newL = cropResizeStartLeft;
+  let newT = cropResizeStartTop;
+  let newW = cropResizeStartWidth;
+  let newH = cropResizeStartHeight;
+  
+  const minSize = 20;
+  
+  if (activeHandle.includes('r')) {
+    newW = Math.max(minSize, Math.min(cropResizeStartWidth + dx, overlayW - newL));
+  }
+  if (activeHandle.includes('b')) {
+    newH = Math.max(minSize, Math.min(cropResizeStartHeight + dy, overlayH - newT));
+  }
+  if (activeHandle.includes('l')) {
+    const maxDx = cropResizeStartWidth - minSize;
+    const finalDx = Math.max(-cropResizeStartLeft, Math.min(dx, maxDx));
+    newL = cropResizeStartLeft + finalDx;
+    newW = cropResizeStartWidth - finalDx;
+  }
+  if (activeHandle.includes('t')) {
+    const maxDx = cropResizeStartHeight - minSize;
+    const finalDy = Math.max(-cropResizeStartTop, Math.min(dy, maxDx));
+    newT = cropResizeStartTop + finalDy;
+    newH = cropResizeStartHeight - finalDy;
+  }
+  
+  cropBox.style.left = newL + 'px';
+  cropBox.style.top = newT + 'px';
+  cropBox.style.width = newW + 'px';
+  cropBox.style.height = newH + 'px';
+  updateCropMasks();
+}
+
+function onStopCropResize() {
+  isCropResizing = false;
+  document.removeEventListener('mousemove', onCropResize);
+  document.removeEventListener('mouseup', onStopCropResize);
+}
+
+if ($('btn-crop-mode')) $('btn-crop-mode').onclick = () => {
+  if (!S.hasImage) return;
+  S.cropMode = !S.cropMode;
+  if (S.cropMode) {
+    S.geo.rotate = 0;
+    S.geo.scale = 1.0;
+    if ($('s-rotate')) { $('s-rotate').value = 0; $('v-rotate').textContent = '0°'; }
+    if ($('s-scale')) { $('s-scale').value = 100; $('v-scale').textContent = '100%'; if ($('n-scale')) $('n-scale').value = 100; }
+    
+    pushHistory().then(() => commitGeo()).then(() => {
+      cropOverlay.hidden = false;
+      cropActions.hidden = false;
+      updateCropOverlayPosition();
+    });
+  } else {
+    cropOverlay.hidden = true;
+    cropActions.hidden = true;
+  }
+};
+
+if ($('btn-crop-cancel')) $('btn-crop-cancel').onclick = () => {
+  S.cropMode = false;
+  cropOverlay.hidden = true;
+  cropActions.hidden = true;
+};
+
+if ($('btn-crop-apply')) $('btn-crop-apply').onclick = async () => {
+  if (!S.hasImage) return;
+  const rect = getRenderedImageRect(imgAfter);
+  if (!rect) return;
+  
+  const overlayW = parseFloat(cropOverlay.style.width) || rect.width;
+  const overlayH = parseFloat(cropOverlay.style.height) || rect.height;
+  
+  const boxL = parseFloat(cropBox.style.left) || 0;
+  const boxT = parseFloat(cropBox.style.top) || 0;
+  const boxW = parseFloat(cropBox.style.width) || 0;
+  const boxH = parseFloat(cropBox.style.height) || 0;
+  
+  const scaleX = rect.naturalWidth / overlayW;
+  const scaleY = rect.naturalHeight / overlayH;
+  
+  const left = Math.round(boxL * scaleX);
+  const top = Math.round(boxT * scaleY);
+  const right = Math.round((boxL + boxW) * scaleX);
+  const bottom = Math.round((boxT + boxH) * scaleY);
+  
+  S.cropMode = false;
+  cropOverlay.hidden = true;
+  cropActions.hidden = true;
+  
+  await pushHistory();
+  const data = await api('crop', { left, top, right, bottom });
+  if (data) {
+    S.geo.crop = [left, top, right, bottom];
+  }
+};
+
+window.addEventListener('resize', () => {
+  if (S.cropMode) {
+    updateCropOverlayPosition();
+  }
+});
+
+/* ─── TRANSLATION (GESER/DRAG) LOGIC ─── */
+let isTranslating = false;
+let transStartX, transStartY, transStartTx, transStartTy;
+
+if ($('btn-drag-mode')) $('btn-drag-mode').onclick = () => {
+  if (!S.hasImage) return;
+  S.dragMode = !S.dragMode;
+  if (S.dragMode) {
+    $('btn-drag-mode').classList.add('active');
+    imgAfter.style.cursor = 'move';
+    setStatus('Mode Geser aktif: Seret (drag) gambar untuk menggeser.', 'ok');
+  } else {
+    $('btn-drag-mode').classList.remove('active');
+    imgAfter.style.cursor = '';
+    imgAfter.style.transform = '';
+  }
+};
+
+imgAfter.addEventListener('mousedown', (e) => {
+  if (!S.dragMode || !S.hasImage) return;
+  isTranslating = true;
+  transStartX = e.clientX;
+  transStartY = e.clientY;
+  transStartTx = S.geo.tx;
+  transStartTy = S.geo.ty;
+  e.preventDefault();
+  document.addEventListener('mousemove', onTranslateMove);
+  document.addEventListener('mouseup', onTranslateStop);
+});
+
+function onTranslateMove(e) {
+  if (!isTranslating) return;
+  const dx = e.clientX - transStartX;
+  const dy = e.clientY - transStartY;
+  
+  const rect = getRenderedImageRect(imgAfter);
+  const scaleX = rect ? (rect.naturalWidth / rect.width) : 1.0;
+  const scaleY = rect ? (rect.naturalHeight / rect.height) : 1.0;
+  
+  const serverTx = Math.round(transStartTx + dx * scaleX);
+  const serverTy = Math.round(transStartTy + dy * scaleY);
+  
+  $('n-tx').value = serverTx;
+  $('n-ty').value = serverTy;
+  
+  imgAfter.style.transform = `translate(${transStartTx / scaleX + dx}px, ${transStartTy / scaleY + dy}px)`;
+}
+
+async function onTranslateStop() {
+  if (!isTranslating) return;
+  isTranslating = false;
+  document.removeEventListener('mousemove', onTranslateMove);
+  document.removeEventListener('mouseup', onTranslateStop);
+  
+  S.geo.tx = parseInt($('n-tx').value) || 0;
+  S.geo.ty = parseInt($('n-ty').value) || 0;
+  
+  await pushHistory();
+  commitGeo();
+}
+
+if ($('btn-translate')) $('btn-translate').onclick = async () => {
+  if (!S.hasImage) return;
+  const tx = parseInt($('n-tx').value) || 0;
+  const ty = parseInt($('n-ty').value) || 0;
+  S.geo.tx = tx;
+  S.geo.ty = ty;
+  await pushHistory();
+  commitGeo();
+};
+/* ═══════════════════════════════════════════════
+   FLOATING POPUP MODALS MANAGEMENT (REUSABLE DRAG)
+═══════════════════════════════════════════════ */
+function makeDraggable(headerId, boxId) {
+    const header = $(headerId), box = $(boxId);
+    if (!header || !box) return;
+    let isDragging = false, startX, startY, startLeft, startTop;
+    header.style.cursor = 'grab';
+    header.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('hist-close')) return;
+        isDragging = true; header.style.cursor = 'grabbing';
+        startX = e.clientX; startY = e.clientY;
+        const rect = box.getBoundingClientRect();
+        if (box.style.transform) { box.style.left = rect.left + 'px'; box.style.top = rect.top + 'px'; box.style.transform = 'none'; }
+        startLeft = parseInt(window.getComputedStyle(box).left, 10) || rect.left;
+        startTop = parseInt(window.getComputedStyle(box).top, 10) || rect.top;
+        document.addEventListener('mousemove', onDrag); document.addEventListener('mouseup', onStopDrag);
+    });
+    function onDrag(e) { if (!isDragging) return; box.style.left = (startLeft + (e.clientX - startX)) + 'px'; box.style.top = (startTop + (e.clientY - startY)) + 'px'; }
+    function onStopDrag() { isDragging = false; header.style.cursor = 'grab'; document.removeEventListener('mousemove', onDrag); document.removeEventListener('mouseup', onStopDrag); }
+}
+
+makeDraggable('hsv-header', 'hsv-box');
+makeDraggable('enhance-header', 'enhance-box');
+makeDraggable('hist-header', 'hist-box');
+makeDraggable('transform-header', 'transform-box');
+makeDraggable('segmentation-header', 'segmentation-box');
+makeDraggable('restoration-header', 'restoration-box');
+
+// Trigger Pembukaan Modals Panel Dari Dropdown Menu
+$('btn-open-hsv')?.addEventListener('click', async () => { if (!S.hasImage) return; $('hsv-modal').hidden = false; await snapshotRestoreBase(); previewHSV(); });
+$('btn-open-enhance')?.addEventListener('click', () => { if (!S.hasImage) return; $('enhance-modal').hidden = false; });
+$('btn-toggle-hist')?.addEventListener('click', () => { if (!S.hasImage) return; $('hist-modal').hidden = !$('hist-modal').hidden; triggerRealtimeHistogram(); });
+
+$('hsv-close').onclick = $('btn-hsv-cancel').onclick = async () => { $('hsv-modal').hidden = true; await api('restore/revert', null, 'POST'); };
+$('enhance-close').onclick = $('btn-enhance-cancel').onclick = () => { $('enhance-modal').hidden = true; };
+$('hist-close').onclick = () => { $('hist-modal').hidden = true; };
+
+// Pemroses Slider Enhancement di dalam Popup Modal
 let enhTimer;
 Object.entries(ENH_SLIDERS).forEach(([k, s]) => {
   if(!s.el) return;
-  s.el.addEventListener('mousedown', async () => { if(S.hasImage) await pushHistory(); });
   s.el.addEventListener('input', () => {
-    s.val.textContent = s.el.value;
-    if (!S.hasImage) return;
-    S.enh = getEnhValues();
-    clearTimeout(enhTimer);
-    enhTimer = setTimeout(() => api('enhance', getEnhValues()), 80);
+    s.val.textContent = s.el.value; if (!S.hasImage) return;
+    clearTimeout(enhTimer); enhTimer = setTimeout(() => api('enhance', getEnhValues()), 60);
   });
 });
-
-/* ─── ROTATE — debounce direct to server ────────────────── */
-const sRotate = $('s-rotate');
-const vRotate = $('v-rotate');
-let rotateTimer;
-if(sRotate) {
-  sRotate.addEventListener('mousedown', async () => { if(S.hasImage) await pushHistory(); });
-  sRotate.addEventListener('input', () => {
-    const deg = +sRotate.value;
-    vRotate.textContent = deg + '°';
-    S.geo.rotate = deg;
-    if (!S.hasImage) return;
-    clearTimeout(rotateTimer);
-    rotateTimer = setTimeout(() => commitGeo(), 120);
-  });
-}
-
-/* ─── SCALE — debounce direct to server ─────────────────── */
-const sScale = $('s-scale');
-const vScale = $('v-scale');
-let scaleTimer;
-if(sScale) {
-  sScale.addEventListener('mousedown', async () => { if(S.hasImage) await pushHistory(); });
-  sScale.addEventListener('input', () => {
-    const pct = +sScale.value;
-    vScale.textContent = pct + '%';
-    const nScale = $('n-scale');
-    if (nScale) nScale.value = pct;
-    S.geo.scale = pct / 100;
-    if (!S.hasImage) return;
-    clearTimeout(scaleTimer);
-    scaleTimer = setTimeout(() => commitGeo(), 120);
-  });
-}
-
-const nScaleEl = $('n-scale');
-if (nScaleEl) {
-  nScaleEl.addEventListener('change', async () => {
-    await pushHistory();
-    const pct = Math.max(10, Math.min(2000, +nScaleEl.value));
-    nScaleEl.value = pct;
-    if(sScale) sScale.value = Math.min(1000, pct);
-    if(vScale) vScale.textContent = pct + '%';
-    S.geo.scale = pct / 100;
-    if (S.hasImage) commitGeo();
-  });
-}
-
-function buildCSSTransform() {
-  if (S.geo.tx || S.geo.ty) return `translate(${S.geo.tx}px, ${S.geo.ty}px)`;
-  return '';
-}
-
-/* ─── TRANSLATION — drag the image ──────────────────────── */
-let dragStartX, dragStartY, dragOrigTx, dragOrigTy;
-function enterDragMode() {
-  if (!S.hasImage) return;
-  S.dragMode = true;
-  imgAfter.style.cursor = 'grab';
-  if($('btn-drag-mode')) $('btn-drag-mode').textContent = '✕ Keluar Mode Geser';
-  imgAfter.addEventListener('pointerdown', startImageDrag);
-}
-function exitDragMode() {
-  S.dragMode = false;
-  if (imgAfter) { imgAfter.style.cursor = ''; imgAfter.removeEventListener('pointerdown', startImageDrag); }
-  const btn = $('btn-drag-mode');
-  if (btn) btn.textContent = '⤳ Mode Geser Gambar';
-}
-function startImageDrag(e) {
-  e.preventDefault();
-  imgAfter.style.cursor = 'grabbing';
-  dragStartX = e.clientX; dragStartY = e.clientY;
-  dragOrigTx = S.geo.tx;  dragOrigTy = S.geo.ty;
-  pushHistory(); // Simpan riwayat sebelum ditarik
-
-  function onMove(e) {
-    const dx = Math.round(e.clientX - dragStartX);
-    const dy = Math.round(e.clientY - dragStartY);
-    S.geo.tx = dragOrigTx + dx;
-    S.geo.ty = dragOrigTy + dy;
-    if($('n-tx')) $('n-tx').value = S.geo.tx;
-    if($('n-ty')) $('n-ty').value = S.geo.ty;
-    imgAfter.style.transform = buildCSSTransform();
-    imgAfter.style.transformOrigin = 'center center';
-  }
-  function onUp() {
-    imgAfter.style.cursor = 'grab';
-    imgAfter.style.transform = '';
-    commitGeo();
-    document.removeEventListener('pointermove', onMove);
-    document.removeEventListener('pointerup', onUp);
-  }
-  document.addEventListener('pointermove', onMove);
-  document.addEventListener('pointerup', onUp);
-}
-
-/* ─── CROP — interactive overlay ────────────────────────── */
-let crop = { x:10, y:10, w:80, h:80 };
-function enterCropMode() {
-  if (!S.hasImage) return;
-  exitResizeMode(); exitDragMode();
-  S.cropMode = true;
-  crop = { x:10, y:10, w:80, h:80 };
-  if(cropOverlay) cropOverlay.hidden = false;
-  if(cropActions) cropActions.hidden = false;
-  if($('btn-crop-mode')) $('btn-crop-mode').textContent = '✕ Keluar Crop';
-  if($('after-label')) $('after-label').textContent = 'AFTER — MODE CROP';
-  updateCropBox();
-  initCropDrag();
-}
-function exitCropMode() {
-  S.cropMode = false;
-  if(cropOverlay) cropOverlay.hidden = true;
-  if(cropActions) cropActions.hidden = true;
-  if($('btn-crop-mode')) $('btn-crop-mode').textContent = '✂ Mode Crop';
-  if($('after-label')) $('after-label').textContent = 'AFTER';
-}
-
-function updateCropBox() {
-  if(!cropBox || !afterWrap || !imgAfter) return;
-  const wrap = afterWrap.getBoundingClientRect();
-  const img  = imgAfter.getBoundingClientRect();
-  const ox = img.left - wrap.left, oy = img.top - wrap.top;
-  const iw = img.width, ih = img.height;
-  const bx = ox + (crop.x/100)*iw, by = oy + (crop.y/100)*ih;
-  const bw = (crop.w/100)*iw,      bh = (crop.h/100)*ih;
-
-  cropBox.style.cssText = `left:${bx}px;top:${by}px;width:${bw}px;height:${bh}px`;
-  if($('crop-mask-top')) $('crop-mask-top').style.cssText    = `top:${oy}px;left:${ox}px;width:${iw}px;height:${by-oy}px`;
-  if($('crop-mask-left')) $('crop-mask-left').style.cssText   = `top:${by}px;left:${ox}px;width:${bx-ox}px;height:${bh}px`;
-  if($('crop-mask-right')) $('crop-mask-right').style.cssText  = `top:${by}px;left:${bx+bw}px;width:${ox+iw-bx-bw}px;height:${bh}px`;
-  if($('crop-mask-bottom')) $('crop-mask-bottom').style.cssText = `top:${by+bh}px;left:${ox}px;width:${iw}px;height:${oy+ih-by-bh}px`;
-}
-
-function initCropDrag() {
-  if(!cropBox) return;
-  cropBox.querySelectorAll('.crop-handle').forEach(h => {
-    h.onpointerdown = e => {
-      e.preventDefault(); e.stopPropagation();
-      const pos = h.dataset.pos;
-      const img = imgAfter.getBoundingClientRect();
-      const sx = e.clientX, sy = e.clientY, orig = {...crop};
-      const onMove = e => {
-        const dx=(e.clientX-sx)/img.width*100, dy=(e.clientY-sy)/img.height*100;
-        let {x,y,w,h} = orig;
-        if(pos.includes('r')) w=Math.max(5,Math.min(100-x, w+dx));
-        if(pos.includes('b')) h=Math.max(5,Math.min(100-y, h+dy));
-        if(pos.includes('l')){ w=Math.max(5,w-dx); x=Math.min(orig.x+orig.w-5, orig.x+dx); }
-        if(pos.includes('t')){ h=Math.max(5,h-dy); y=Math.min(orig.y+orig.h-5, orig.y+dy); }
-        crop={x,y,w,h}; updateCropBox();
-      };
-      const onUp = () => { document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); };
-      document.addEventListener('pointermove',onMove);
-      document.addEventListener('pointerup',onUp);
-    };
-  });
-  cropBox.onpointerdown = e => {
-    if(e.target.classList.contains('crop-handle')) return;
-    e.preventDefault();
-    const img=imgAfter.getBoundingClientRect();
-    const sx=e.clientX, sy=e.clientY, orig={...crop};
-    const onMove=e=>{
-      crop.x=Math.max(0,Math.min(100-orig.w, orig.x+(e.clientX-sx)/img.width*100));
-      crop.y=Math.max(0,Math.min(100-orig.h, orig.y+(e.clientY-sy)/img.height*100));
-      updateCropBox();
-    };
-    const onUp=()=>{ document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); };
-    document.addEventListener('pointermove',onMove);
-    document.addEventListener('pointerup',onUp);
-  };
-}
-
-async function applyCrop() {
-  const baseW = Math.round(S.imgW / S.geo.scale);
-  const baseH = Math.round(S.imgH / S.geo.scale);
-  const l = Math.round((crop.x/100)*baseW);
-  const t = Math.round((crop.y/100)*baseH);
-  const r = Math.round(((crop.x+crop.w)/100)*baseW);
-  const b = Math.round(((crop.y+crop.h)/100)*baseH);
-  await pushHistory(); 
-  await api('crop', {left:l, top:t, right:r, bottom:b});
-  S.geo.scale = 1.0; 
-  if($('s-scale')) $('s-scale').value=100; 
-  if($('v-scale')) $('v-scale').textContent='100%';
-  exitCropMode();
-}
-
-/* ─── RESIZE drag ────────────────────────────────────────── */
-function enterResizeMode() {
-  if (!S.hasImage) return;
-  exitCropMode(); exitDragMode();
-  S.resizeMode = true;
-  if(resizeOverlay) resizeOverlay.hidden = false;
-  if($('btn-resize-mode')) $('btn-resize-mode').textContent = '✕ Keluar Mode Tarik';
-  positionResizeHandles();
-  if(resizeOverlay) resizeOverlay.querySelectorAll('.resize-handle').forEach(h => h.addEventListener('pointerdown', startResizeDrag));
-}
-function exitResizeMode() {
-  S.resizeMode = false;
-  if(resizeOverlay) {
-    resizeOverlay.hidden = true;
-    resizeOverlay.querySelectorAll('.resize-handle').forEach(h => h.removeEventListener('pointerdown', startResizeDrag));
-  }
-  if($('btn-resize-mode')) $('btn-resize-mode').textContent = '⤡ Mode Tarik';
-}
-function positionResizeHandles() {
-  if(!resizeOverlay || !imgAfter || !afterWrap) return;
-  const img  = imgAfter.getBoundingClientRect();
-  const wrap = afterWrap.getBoundingClientRect();
-  resizeOverlay.style.cssText = `left:${img.left-wrap.left}px;top:${img.top-wrap.top}px;width:${img.width}px;height:${img.height}px`;
-}
-function startResizeDrag(e) {
-  e.preventDefault();
-  const pos=e.target.dataset.pos;
-  const sx=e.clientX, sy=e.clientY;
-  const sw=S.imgW, sh=S.imgH;
-  const scale = imgAfter.getBoundingClientRect().width / S.imgW;
-  let resizeTimer;
-  const onMove=e=>{
-    const dx=e.clientX-sx, dy=e.clientY-sy;
-    let nw=sw, nh=sh;
-    if(pos.includes('r')||pos==='br') nw=Math.max(10, sw+Math.round(dx/scale));
-    if(pos.includes('b')||pos==='br') nh=Math.max(10, sh+Math.round(dy/scale));
-    if($('n-width')) $('n-width').value=nw; 
-    if($('n-height')) $('n-height').value=nh;
-    imgAfter.style.width  = (nw/sw*imgAfter.getBoundingClientRect().width)+'px';
-    clearTimeout(resizeTimer);
-  };
-  const onUp=async e=>{
-    document.removeEventListener('pointermove',onMove);
-    document.removeEventListener('pointerup',onUp);
-    imgAfter.style.width='';
-    const nw=parseInt($('n-width').value);
-    const nh=parseInt($('n-height').value);
-    await pushHistory();
-    await api('resize',{width:nw,height:nh});
-    positionResizeHandles();
-  };
-  document.addEventListener('pointermove',onMove);
-  document.addEventListener('pointerup',onUp);
-}
-
-/* ─── Event Listeners ────────────────────────────────────── */
-if(fileInput) fileInput.addEventListener('change', e => { if(e.target.files[0]) uploadImage(e.target.files[0]); e.target.value=''; });
-if(beforeWrap) beforeWrap.addEventListener('click', ()=>{ if(!S.hasImage && fileInput) fileInput.click(); });
-
-if($('btn-clear')) $('btn-clear').addEventListener('click', ()=>{ if(S.hasImage){ clearCanvas(); setStatus('Gambar dihapus.'); } });
-if($('btn-apply')) $('btn-apply').addEventListener('click', async ()=>{ if(S.hasImage){ await pushHistory(); api('enhance', getEnhValues()); } });
-if($('btn-reset-sliders')) $('btn-reset-sliders').addEventListener('click', async ()=>{ if(S.hasImage) await pushHistory(); resetEnhSliders(); if(S.hasImage) api('enhance', getEnhValues()); });
-
-if($('btn-reset')) $('btn-reset').addEventListener('click', async ()=>{
-  if(!S.hasImage) return;
-  exitCropMode(); exitResizeMode(); exitDragMode();
-  await pushHistory();
-  const data = await api('reset', null, 'GET');
-  if(data){ showImage(data.image, imgBefore); resetEnhSliders(); resetGeoUI(); }
-});
-
-if($('btn-rotate-reset')) $('btn-rotate-reset').addEventListener('click', async ()=>{
-  if(S.hasImage) await pushHistory();
-  if(sRotate) sRotate.value=0; if(vRotate) vRotate.textContent='0°'; S.geo.rotate=0;
-  if(imgAfter) imgAfter.style.transform=''; if(S.hasImage) commitGeo();
-});
-if($('btn-scale-reset')) $('btn-scale-reset').addEventListener('click', async ()=>{
-  if(S.hasImage) await pushHistory();
-  if(sScale) sScale.value=100; if(vScale) vScale.textContent='100%'; S.geo.scale=1.0;
-  if(imgAfter) imgAfter.style.transform=''; if(S.hasImage) commitGeo();
-});
-
-if($('btn-flip-h')) $('btn-flip-h').addEventListener('click', ()=>{ S.geo.flip_h=!S.geo.flip_h; if(S.hasImage) pushHistory().then(()=>commitGeo()); });
-if($('btn-flip-v')) $('btn-flip-v').addEventListener('click', ()=>{ S.geo.flip_v=!S.geo.flip_v; if(S.hasImage) pushHistory().then(()=>commitGeo()); });
-
-if($('btn-resize')) $('btn-resize').addEventListener('click', async ()=>{
-  const w=parseInt($('n-width').value), h=parseInt($('n-height').value);
-  if(!w||!h){ setStatus('Isi width dan height.','error'); return; }
-  await pushHistory();
-  api('resize',{width:w,height:h});
-});
-if($('btn-resize-mode')) $('btn-resize-mode').addEventListener('click', ()=>{ S.resizeMode ? exitResizeMode() : enterResizeMode(); });
-
-if($('btn-crop-mode')) $('btn-crop-mode').addEventListener('click', ()=>{ S.cropMode ? exitCropMode() : enterCropMode(); });
-if($('btn-crop-apply')) $('btn-crop-apply').addEventListener('click', applyCrop);
-if($('btn-crop-cancel')) $('btn-crop-cancel').addEventListener('click', exitCropMode);
-
-if($('btn-drag-mode')) $('btn-drag-mode').addEventListener('click', ()=>{ S.dragMode ? exitDragMode() : enterDragMode(); });
-if($('btn-translate')) $('btn-translate').addEventListener('click', async ()=>{
-  S.geo.tx = parseInt($('n-tx')?.value)||0;
-  S.geo.ty = parseInt($('n-ty')?.value)||0;
-  if(S.hasImage){ await pushHistory(); commitGeo(); }
-});
-
-window.addEventListener('resize', ()=>{
-  if(S.cropMode) updateCropBox();
-  if(S.resizeMode) positionResizeHandles();
-});
+$('btn-enhance-ok').onclick = async () => { if(!S.hasImage) return; $('enhance-modal').hidden = true; await pushHistory(); api('enhance', getEnhValues()); };
 
 /* ═══════════════════════════════════════════════
-   HISTOGRAM
+   FITUR 5 & 7: SEGMENTATION, EDGE, & MORPHOLOGY LOGIC
 ═══════════════════════════════════════════════ */
-let histData = null;
-let histChannel = 'rgb';
+let segTimer;
 
-const histModal  = $('hist-modal');
-const histCanvas = $('hist-canvas');
-const histCtx    = histCanvas ? histCanvas.getContext('2d') : null;
-
-function drawHistogram(channel) {
-  if (!histData || !histCtx) return;
-  const W = histCanvas.width, H = histCanvas.height;
-  histCtx.clearRect(0, 0, W, H);
-
-  // background grid
-  histCtx.strokeStyle = 'rgba(255,255,255,0.04)';
-  histCtx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = (H / 4) * i;
-    histCtx.beginPath(); histCtx.moveTo(0, y); histCtx.lineTo(W, y); histCtx.stroke();
-  }
-  for (let i = 0; i <= 4; i++) {
-    const x = (W / 4) * i;
-    histCtx.beginPath(); histCtx.moveTo(x, 0); histCtx.lineTo(x, H); histCtx.stroke();
-  }
-
-  const channels = channel === 'rgb'
-    ? [{ data: histData.r, color: 'rgba(255,80,80,0.7)'  },
-       { data: histData.g, color: 'rgba(80,255,120,0.7)' },
-       { data: histData.b, color: 'rgba(80,160,255,0.7)' }]
-    : channel === 'r'    ? [{ data: histData.r,    color: 'rgba(255,80,80,0.9)'   }]
-    : channel === 'g'    ? [{ data: histData.g,    color: 'rgba(80,255,120,0.9)'  }]
-    : channel === 'b'    ? [{ data: histData.b,    color: 'rgba(80,160,255,0.9)'  }]
-    : /* gray */           [{ data: histData.gray, color: 'rgba(180,180,220,0.9)' }];
-
-  const maxVal = Math.max(...channels.flatMap(c => c.data));
-
-  channels.forEach(({ data, color }) => {
-    histCtx.beginPath();
-    histCtx.strokeStyle = color;
-    histCtx.lineWidth = 1.5;
-    data.forEach((v, i) => {
-      const x = (i / 255) * W;
-      const y = H - (v / maxVal) * (H - 4);
-      i === 0 ? histCtx.moveTo(x, y) : histCtx.lineTo(x, y);
-    });
-    histCtx.stroke();
-
-    // fill under curve
-    histCtx.lineTo(W, H); histCtx.lineTo(0, H);
-    histCtx.closePath();
-    histCtx.fillStyle = color.replace('0.7', '0.08').replace('0.9', '0.1');
-    histCtx.fill();
-  });
-
-  // x axis labels
-  histCtx.fillStyle = 'rgba(100,120,160,0.8)';
-  histCtx.font = '10px Share Tech Mono, monospace';
-  [0, 64, 128, 192, 255].forEach(v => {
-    histCtx.fillText(v, (v / 255) * W - 6, H - 4);
-  });
-}
-
-async function openHistogram() {
-  if (!S.hasImage) return;
-  showLoading(true);
-  try {
-    const res  = await fetch('/api/histogram');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail);
-    histData = data;
-    if(histModal) histModal.hidden = false;
-    drawHistogram(histChannel);
-  } catch(e) {
-    setStatus('✕ ' + e.message, 'error');
-  } finally {
-    showLoading(false);
-  }
-}
-
-if($('btn-histeq')) {
-  $('btn-histeq').textContent = '📊 Histogram EQ';
-  $('btn-histeq').onclick = async () => {
-      if(!S.hasImage) return;
-      await pushHistory();
-      api('histeq', {});
-  };
-}
-
-// Hist modal triggers
-if($('hist-close')) $('hist-close').addEventListener('click', () => { histModal.hidden = true; });
-if(histModal) histModal.addEventListener('click', e => {
-  if (e.target === histModal) histModal.hidden = true;
-});
-
-document.querySelectorAll('.hist-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.hist-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    histChannel = tab.dataset.ch;
-    drawHistogram(histChannel);
-  });
-});
-
-/* ═══════════════════════════════════════════════
-   RESTORATION
-═══════════════════════════════════════════════ */
-function setupSlider(sliderId, valId, transform) {
-  const s = $(sliderId), v = $(valId);
-  if (!s || !v) return;
-  s.addEventListener('input', () => { v.textContent = transform(+s.value); });
-}
-
-// Gaussian: slider 1-20 → radius 0.5-10
-setupSlider('s-gauss',     'v-gauss',     v => (v / 2).toFixed(1));
-// Median: slider 1-4 → size 3,5,7,9
-setupSlider('s-median',    'v-median',    v => v * 2 + 1);
-// Mean: slider 1-3 → size 3,5,7
-setupSlider('s-mean',      'v-mean',      v => v * 2 + 1);
-// Salt pepper
-setupSlider('s-sp-remove', 'v-sp-remove', v => v);
-setupSlider('s-sp-add',    'v-sp-add',    v => v + '%');
-// Unsharp
-setupSlider('s-unsharp-r', 'v-unsharp-r', v => v);
-setupSlider('s-unsharp-p', 'v-unsharp-p', v => v);
-
-/* ═══════════════════════════════════════════════
-   RESTORATION — filter selector
-═══════════════════════════════════════════════ */
-let activeRestoreFilter = 'gaussian';
-let restoreBase = null;   // snapshot current_image saat masuk/ganti filter
-let restoreTimer;
-
-async function snapshotRestoreBase() {
-  if (!S.hasImage) return;
-  try {
-    const res  = await fetch('/api/restore/snapshot', { method: 'POST' });
-    const data = await res.json();
-    if (data.ok) restoreBase = true;
-  } catch(e) {}
-}
-
-async function previewRestore() {
-  if (!S.hasImage) return;
-  clearTimeout(restoreTimer);
-  restoreTimer = setTimeout(async () => {
-    const f = activeRestoreFilter;
-    let body = {};
-    if (f === 'gaussian')   body = { radius: +$('s-gauss').value / 2 };
-    if (f === 'median')     body = { size: +$('s-median').value * 2 + 1 };
-    if (f === 'mean')       body = { size: +$('s-mean').value * 2 + 1 };
-    if (f === 'saltpepper') body = { strength: +$('s-sp-remove').value };
-    if (f === 'unsharp')    body = { radius: +$('s-unsharp-r').value, percent: +$('s-unsharp-p').value, threshold: 3 };
-    await api(`restore/preview/${f}`, body);
-  }, 200);
-}
-
-async function commitRestore() {
-  if (!S.hasImage) return;
-  const f = activeRestoreFilter;
-  let body = {};
-  if (f === 'gaussian')   body = { radius: +$('s-gauss').value / 2 };
-  if (f === 'median')     body = { size: +$('s-median').value * 2 + 1 };
-  if (f === 'mean')       body = { size: +$('s-mean').value * 2 + 1 };
-  if (f === 'saltpepper') body = { strength: +$('s-sp-remove').value };
-  if (f === 'unsharp')    body = { radius: +$('s-unsharp-r').value, percent: +$('s-unsharp-p').value, threshold: 3 };
-  await pushHistory();
-  const data = await api(`restore/${f}`, body);
-  if (data) await snapshotRestoreBase(); // update base setelah commit
-}
-
-document.querySelectorAll('.restore-filter-btn').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    // revert preview dulu ke base sebelum ganti filter
+document.querySelectorAll('[data-seg]').forEach(btn => {
+  btn.onclick = async () => {
     if (S.hasImage) await api('restore/revert', null, 'POST');
-
-    document.querySelectorAll('.restore-filter-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.restore-params').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('[data-seg]').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#segmentation-modal .restore-params').forEach(p => p.classList.remove('active'));
+    
     btn.classList.add('active');
-    activeRestoreFilter = btn.dataset.filter;
-    const rp = $('rp-' + activeRestoreFilter);
+    S.activeSegFilter = btn.dataset.seg;
+    
+    // Penentuan target id tab slider parameter di UI
+    let targetParamId = 'sp-' + S.activeSegFilter;
+    if (S.activeSegFilter.startsWith('edge_') && S.activeSegFilter !== 'edge_canny') {
+        targetParamId = 'sp-edge_fixed'; // Gunakan info badge untuk filter otomatis
+    }
+    if (S.activeSegFilter.startsWith('morph_')) {
+        targetParamId = 'sp-morph';
+    }
+    
+    const rp = $(targetParamId);
     if(rp) rp.classList.add('active');
-
+    
     await snapshotRestoreBase();
-    previewRestore();
-  });
+    previewSegmentation();
+  };
 });
 
-const restTab = document.querySelector('[data-tab="restoration"]');
-if(restTab) {
-    restTab.addEventListener('click', async () => {
-      await snapshotRestoreBase();
-      previewRestore();
-    });
+function previewSegmentation() {
+  if (!S.hasImage) return;
+  clearTimeout(segTimer);
+  segTimer = setTimeout(async () => {
+     const f = S.activeSegFilter;
+     let url = '', payload = {};
+     
+     if (f === 'threshold') {
+         url = '/api/binary/threshold'; // Direct preview ke fitur biner baru
+         payload = { threshold: +$('s-seg-thresh').value };
+     } else if (f === 'kmeans') {
+         url = '/api/segment/preview/kmeans';
+         payload = { clusters: +$('s-seg-k').value };
+     } else if (f.startsWith('edge_')) {
+         url = '/api/binary/preview/edge';
+         const methodType = f.replace('edge_', '');
+         payload = { 
+             method: methodType, 
+             p1: +$('s-canny-low').value, 
+             p2: +$('s-canny-high').value 
+         };
+     } else if (f.startsWith('morph_')) {
+         url = '/api/binary/preview/morph';
+         const opType = f.replace('morph_', '');
+         payload = { 
+             operation: opType, 
+             size: +$('s-morph-size').value * 2 + 1 // Ubah 1,2,3 jadi ganjil (3x3, 5x5, 7x7) 
+         };
+     }
+     
+     // Trigger hit preview ke server
+     if(f === 'threshold') {
+         // Khusus threshold panggil endpoint preview
+         showLoading(true);
+         const res = await fetch('/api/binary/preview/threshold', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+         const data = await res.json(); showLoading(false);
+         if (res.ok && data.image) showImage(data.image, imgAfter);
+     } else {
+         showLoading(true);
+         const res = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+         const data = await res.json(); showLoading(false);
+         if (res.ok && data.image) showImage(data.image, imgAfter);
+     }
+  }, 150);
 }
 
-['s-gauss','s-median','s-mean','s-sp-remove','s-unsharp-r','s-unsharp-p'].forEach(id => {
-  const el = $(id);
-  if (el) el.addEventListener('input', previewRestore);
+// Hubungkan semua listener slider di dalam tab segmentation
+['s-seg-thresh', 's-seg-k', 's-canny-low', 's-canny-high'].forEach(id => {
+  $(id)?.addEventListener('input', (e) => { $(id.replace('s-', 'v-')).textContent = e.target.value; previewSegmentation(); });
 });
 
-if($('btn-restore-apply')) $('btn-restore-apply').addEventListener('click', commitRestore);
+$('s-morph-size')?.addEventListener('input', (e) => {
+    const actSize = +e.target.value * 2 + 1;
+    $('v-morph-size').textContent = `${actSize}×${actSize}`;
+    previewSegmentation();
+});
 
-if($('btn-restore-preview')) $('btn-restore-preview').addEventListener('click', async () => {
+// Listener Tombol eksekusi komit riwayat final (Biar Masuk Antrean Undo/Redo!)
+$('btn-segment-apply').onclick = async () => {
   if (!S.hasImage) return;
-  await api('restore/revert', null, 'POST');
+  const f = S.activeSegFilter;
+  let url = '', payload = {};
+  
+  if (f === 'threshold') { url = 'binary/threshold'; payload = { threshold: +$('s-seg-thresh').value }; }
+  else if (f === 'kmeans') { url = 'segment/kmeans'; payload = { clusters: +$('s-seg-k').value }; }
+  else if (f.startsWith('edge_')) {
+      url = 'binary/edge';
+      payload = { method: f.replace('edge_', ''), p1: +$('s-canny-low').value, p2: +$('s-canny-high').value };
+  }
+  else if (f.startsWith('morph_')) {
+      url = 'binary/morph';
+      payload = { operation: f.replace('morph_', ''), size: +$('s-morph-size').value * 2 + 1 };
+  }
+  
+  await pushHistory();
+  await api(url, payload);
   await snapshotRestoreBase();
-  previewRestore();
+};
+
+$('btn-segment-preview').onclick = async () => { if (S.hasImage) { await api('restore/revert', null, 'POST'); await snapshotRestoreBase(); previewSegmentation(); } };
+
+/* ═══════════════════════════════════════════════
+   FITUR 8: IMAGE COMPRESSION INTERACTION LOGIC
+═══════════════════════════════════════════════ */
+const compressModal = $('compress-modal');
+const compressBox   = $('compress-box');
+let compressTimer;
+
+// 1. Daftarkan agar pop-up kompresi bisa digeser melayang di layar
+makeDraggable('compress-header', 'compress-box');
+
+// 2. Event buka jendela modal kompresi dari Dropdown File Navbar
+$('btn-open-compress')?.addEventListener('click', async () => {
+    if (!S.hasImage) return;
+    $('s-compress-quality').value = 80;
+    $('v-compress-quality').textContent = '80%';
+    
+    // Ambil basis gambar saat ini untuk di-preview secara temporer
+    await snapshotRestoreBase();
+    if(compressModal) compressModal.hidden = false;
+    previewCompression();
 });
 
-if($('btn-sp-add')) $('btn-sp-add').addEventListener('click', () => {
-  const amount = +$('s-sp-add').value / 100;
-  pushHistory().then(() => api('restore/add_noise', { amount }));
+// 3. Fungsi penutup jendela modal
+function closeCompressModal() { if(compressModal) compressModal.hidden = true; }
+$('compress-close').onclick = $('btn-compress-cancel').onclick = async () => {
+    closeCompressModal();
+    await api('restore/revert', null, 'POST'); // Kembalikan canvas ke visual awal tanpa kompresi
+};
+
+// 4. Logika Live Preview Perubahan Ukuran File Saat Slider Digeser
+function previewCompression() {
+    if (!S.hasImage) return;
+    clearTimeout(compressTimer);
+    compressTimer = setTimeout(async () => {
+        const qVal = parseInt($('s-compress-quality').value);
+        showLoading(true);
+        
+        const res = await fetch('/api/compress/preview', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ quality: qVal })
+        });
+        const data = await res.json();
+        showLoading(false);
+        
+        if (res.ok && data.image) {
+            // Render gambar hasil kompresi ke panel AFTER secara realtime
+            imgAfter.src = `data:image/jpeg;base64,${data.image}`;
+            // Update teks info rasio penghematan memori di dalam popup
+            const badge = $('compress-info-badge');
+            if(badge) badge.textContent = `Size: ${data.size_kb} | Space Saved: ${data.ratio}`;
+        }
+    }, 120);
+}
+
+// Hubungkan pergerakan thumb slider ke fungsi preview
+$('s-compress-quality')?.addEventListener('input', (e) => {
+    $('v-compress-quality').textContent = e.target.value + '%';
+    previewCompression();
 });
+
+// 5. Tombol Kompresi OK (Save Image secara permanen ke tumpukan Undo/Redo)
+$('btn-compress-ok').onclick = async () => {
+    if (!S.hasImage) return;
+    const qVal = parseInt($('s-compress-quality').value);
+    closeCompressModal();
+    
+    // Tembak API Save untuk mencatatkan state ke tumpukan riwayat Python
+    await api('compress/save', { quality: qVal });
+    await snapshotRestoreBase(); // Refresh snapshot basis
+};

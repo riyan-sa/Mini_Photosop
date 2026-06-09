@@ -1,11 +1,12 @@
 """
-Image Router — v6 (Final Fix Syntax Error Global Variable)
-Geo state pipeline (compose order):
-  original → flip_h → flip_v → crop → scale → rotate → translate
-  lalu di-stack dengan enhancement di atas hasilnya.
+Image Router — v8 (Ultimate Architecture - Fully Repaired & Tested)
+Optimized for Draggable Popup Windows, Realtime Floating Histogram, 
+Tab Segmentation (Feature 7) & Smooth Dynamic History System.
 """
 
-import io, base64
+import io
+import base64
+import copy
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -15,26 +16,86 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+# Pastikan registrasi path selesai sebelum memanggil folder modules
 from modules.image_manager import ImageManager
 from modules.image_enhancer import ImageEnhancer
 from modules.geometric_transformer import GeometricTransformer
+from modules.image_restorer import ImageRestorer
+from modules.color_processor import ColorProcessor
+from modules.segmenter import ImageSegmenter
+from modules.compressor import ImageCompressor
+from modules.binary_edge_processor import BinaryEdgeProcessor
 
 router  = APIRouter()
 manager = ImageManager()
 
-# ── Geo state ─────────────────────────────────────────────────
-geo_state = dict(
-    flip_h=False, flip_v=False,
-    crop=None,
-    scale=1.0,
-    rotate=0.0,
-    tx=0, ty=0,
-)
-
-# ── Enhancement state ─────────────────────────────────────────
+# ── Global States ─────────────────────────────────────────────
+geo_state = dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0)
 enh_state = dict(brightness=1.0, contrast=1.0, sharpen=1.0, blur=0.0)
 
-# ── Helpers ───────────────────────────────────────────────────
+undo_history = []
+redo_history = []
+MAX_HISTORY = 20
+_restore_base = None
+
+# ── Pydantic Schemas Input Validation ─────────────────────────
+class EnhanceParams(BaseModel):
+    brightness: float = 1.0
+    contrast:   float = 1.0
+    sharpen:    float = 1.0
+    blur:       float = 0.0
+
+class GeoCommitParams(BaseModel):
+    flip_h:  bool             = False
+    flip_v:  bool             = False
+    crop:    list | None      = None
+    scale:   float            = 1.0
+    rotate:  float            = 0.0
+    tx:      int              = 0
+    ty:      int              = 0
+
+class CropParams(BaseModel): 
+    left: int; top: int; right: int; bottom: int
+
+class ResizeParams(BaseModel): 
+    width: int; height: int
+
+class SplitChannelParams(BaseModel): 
+    channel: str
+
+class HSVParams(BaseModel): 
+    hue: float; saturation: float; lightness: float
+
+class ThreshParams(BaseModel): 
+    threshold: int
+
+class EdgeParams(BaseModel): 
+    low: int; high: int
+
+class KmeansParams(BaseModel): 
+    clusters: int
+
+class GaussianParams(BaseModel): 
+    radius: float = 2.0
+
+class MedianParams(BaseModel): 
+    size: int = 3
+
+class SaltPepperParams(BaseModel): 
+    strength: int = 2
+
+class MeanParams(BaseModel): 
+    size: int = 3
+
+class UnsharpParams(BaseModel): 
+    radius:    float = 2.0
+    percent:   int   = 150
+    threshold: int   = 3
+
+class NoiseParams(BaseModel): 
+    amount: float = 0.05
+
+# ── System core Helpers ───────────────────────────────────────────
 def img_to_b64(img):
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
@@ -67,20 +128,56 @@ def rebuild(msg: str) -> dict:
     final_img = compose_enh(geo_img)
     manager.update_current(final_img)
     info = manager.get_info()
-    return {"message": msg, "image": img_to_b64(final_img), "info": info}
+    return {
+        "message": msg, 
+        "image": img_to_b64(final_img), 
+        "info": info, 
+        "geo_state": dict(geo_state), 
+        "enh_state": dict(enh_state)
+    }
 
 def reset_states():
     global geo_state, enh_state
     geo_state = dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0)
     enh_state = dict(brightness=1.0, contrast=1.0, sharpen=1.0, blur=0.0)
 
-# ── Upload ────────────────────────────────────────────────────
+def _save_to_history_stack():
+    global undo_history, redo_history
+    undo_history.append((
+        copy.deepcopy(geo_state), 
+        copy.deepcopy(enh_state), 
+        manager.original_image.copy() if manager.original_image else None
+    ))
+    if len(undo_history) > MAX_HISTORY: 
+        undo_history.pop(0)
+    redo_history.clear()
+
+def commit_restoration(img: Image.Image, msg: str) -> dict:
+    """Mengunci hasil warnal/efek destuktif tanpa merusak panel BEFORE asli."""
+    _save_to_history_stack()
+    manager.original_image = img.copy()
+    manager.update_current(img)
+    
+    global geo_state, enh_state
+    geo_state = dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0)
+    enh_state = dict(brightness=1.0, contrast=1.0, sharpen=1.0, blur=0.0)
+    
+    info = manager.get_info()
+    return {
+        "message": msg, 
+        "image": img_to_b64(img), 
+        "info": info, 
+        "geo_state": dict(geo_state), 
+        "enh_state": dict(enh_state)
+    }
+# ── Core Action Endpoints ───────────────────────────────────────────
 @router.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
+    if not file.content_type.startswith("image/"): 
         raise HTTPException(400, "File harus berupa gambar.")
     contents = await file.read()
     img = Image.open(io.BytesIO(contents)).convert("RGB")
+    
     manager.original_image = img.copy()
     manager.current_image  = img.copy()
     manager.file_path      = file.filename
@@ -91,16 +188,11 @@ async def upload_image(file: UploadFile = File(...)):
     redo_history.clear()
     
     w, h = img.size
-    return {"message": f"'{file.filename}' diupload.",
-            "image": img_to_b64(img),
-            "info": {"width": w, "height": h, "mode": img.mode, "file_path": file.filename}}
-
-# ── Enhancement ───────────────────────────────────────────────
-class EnhanceParams(BaseModel):
-    brightness: float = 1.0
-    contrast:   float = 1.0
-    sharpen:    float = 1.0
-    blur:       float = 0.0
+    return {
+        "message": f"'{file.filename}' diupload.", 
+        "image": img_to_b64(img), 
+        "info": {"width": w, "height": h, "mode": img.mode, "file_path": file.filename}
+    }
 
 @router.post("/enhance")
 def enhance_image(params: EnhanceParams):
@@ -113,108 +205,57 @@ def histeq():
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
     geo_img = compose_geo(manager.original_image)
     eq_img  = ImageEnhancer.histogram_equalization(geo_img)
-    manager.original_image = eq_img.copy()
-    geo_state.update(dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0))
-    return rebuild("Histogram equalization diterapkan.")
+    return commit_restoration(eq_img, "Histogram equalization diterapkan.")
 
-# ── Reset ─────────────────────────────────────────────────────
 @router.get("/reset")
 def reset_image():
     img = manager.reset_image()
     if img is None: raise HTTPException(400, "Belum ada gambar.")
     reset_states()
-    
     global undo_history, redo_history
     undo_history.clear()
     redo_history.clear()
-    
     w, h = img.size
-    return {"message": "Reset ke gambar awal.",
-            "image": img_to_b64(img),
-            "info": {"width": w, "height": h, "mode": img.mode}}
+    return {"message": "Reset ke gambar awal.", "image": img_to_b64(img), "info": {"width": w, "height": h, "mode": img.mode}}
 
-# ── Download ──────────────────────────────────────────────────
 @router.get("/download")
 def download_image():
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
     buf = io.BytesIO()
     manager.current_image.save(buf, format="PNG")
     buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png",
-        headers={"Content-Disposition": "attachment; filename=result.png"})
-
-# ── Geo state endpoint ────────────────────────────────────────
-class GeoCommitParams(BaseModel):
-    flip_h:  bool             = False
-    flip_v:  bool             = False
-    crop:    list | None      = None
-    scale:   float            = 1.0
-    rotate:  float            = 0.0
-    tx:      int              = 0
-    ty:      int              = 0
+    return StreamingResponse(buf, media_type="image/png", headers={"Content-Disposition": "attachment; filename=result.png"})
 
 @router.post("/geo_commit")
 def geo_commit(params: GeoCommitParams):
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
-    geo_state["flip_h"]  = params.flip_h
-    geo_state["flip_v"]  = params.flip_v
-    geo_state["crop"]    = tuple(params.crop) if params.crop else None
-    geo_state["scale"]   = params.scale
-    geo_state["rotate"]  = params.rotate
-    geo_state["tx"]      = params.tx
-    geo_state["ty"]      = params.ty
+    geo_state.update(params.dict(exclude_unset=True))
     return rebuild("Geometric diterapkan.")
-
-class CropParams(BaseModel):
-    left: int; top: int; right: int; bottom: int
 
 @router.post("/crop")
 def crop_image(params: CropParams):
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
-    img = manager.original_image.copy()
-    if geo_state["flip_h"]: img = GeometricTransformer.flip_horizontal(img)
-    if geo_state["flip_v"]: img = GeometricTransformer.flip_vertical(img)
-    w, h = img.size
-    l = max(0, min(params.left,  w))
-    t = max(0, min(params.top,   h))
-    r = max(0, min(params.right, w))
-    b = max(0, min(params.bottom,h))
-    geo_state["crop"] = (l, t, r, b)
-    return rebuild("Crop diterapkan.")
-
-class ResizeParams(BaseModel):
-    width: int; height: int
+    geo_img = compose_geo(manager.original_image)
+    w, h = geo_img.size
+    l = max(0, min(params.left,  w)); t = max(0, min(params.top,   h))
+    r = max(0, min(params.right, w)); b = max(0, min(params.bottom,h))
+    
+    # Potong gambar dari hasil komposisi geometri saat ini
+    cropped_img = GeometricTransformer.crop(geo_img, l, t, r, b)
+    
+    # Simpan hasil potong ke original_image secara permanen (destructive + mendukung Undo/Redo)
+    return commit_restoration(cropped_img, "Crop diterapkan.")
 
 @router.post("/resize")
 def resize_image(params: ResizeParams):
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
-    from modules.geometric_transformer import GeometricTransformer
     geo_img = compose_geo(manager.original_image)
     img = GeometricTransformer.resize(geo_img, params.width, params.height)
-    manager.original_image = img.copy()
-    geo_state.update(dict(flip_h=False,flip_v=False,crop=None,scale=1.0,rotate=0.0,tx=0,ty=0))
-    return rebuild(f"Resize ke {params.width}×{params.height}.")
+    return commit_restoration(img, f"Resize ke {params.width}×{params.height}.")
 
-# ── Undo / Redo History ────────────────────────────────────────────────
-undo_history = []
-redo_history = []
-MAX_HISTORY = 20
-
-def _save_to_history_stack():
-    import copy
-    global undo_history, redo_history
-    undo_history.append((
-        copy.deepcopy(geo_state),
-        copy.deepcopy(enh_state),
-        manager.original_image.copy() if manager.original_image else None
-    ))
-    if len(undo_history) > MAX_HISTORY:
-        undo_history.pop(0)
-    redo_history.clear()
-
+# ── Dynamic History Stack Controller (Undo/Redo Engine) ───────────
 @router.post("/push_history")
 def push_history_endpoint():
-    """Dipanggil frontend sebelum operasi destructive/slider."""
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
     _save_to_history_stack()
     return {"message": "History saved."}
@@ -222,52 +263,57 @@ def push_history_endpoint():
 @router.post("/undo")
 def undo():
     global geo_state, enh_state, redo_history, undo_history
-    # Cek histori SETELAH deklarasi global
-    if not undo_history: raise HTTPException(400, "Tidak ada riwayat untuk di-undo.")
-    import copy
+    if not undo_history: 
+        raise HTTPException(400, "Tidak ada riwayat untuk di-undo.")
     
-    # Simpan current state ke redo_history sebelum mundur
+    # Masukkan state saat ini ke Redo sebelum mundur ke belakang
     redo_history.append((
-        copy.deepcopy(geo_state),
-        copy.deepcopy(enh_state),
-        manager.original_image.copy()
+        copy.deepcopy(geo_state), 
+        copy.deepcopy(enh_state), 
+        manager.original_image.copy() if manager.original_image else None
     ))
     
+    # Ambil snapshot masa lalu dari stack Undo
     geo_snap, enh_snap, orig_snap = undo_history.pop()
+    
+    # Kembalikan semua state dan objek gambar induknya
     geo_state.update(geo_snap)
     enh_state.update(enh_snap)
-    manager.original_image = orig_snap.copy()
+    if orig_snap:
+        manager.original_image = orig_snap.copy()
     
-    result = rebuild("Undo berhasil.")
-    result["enh_state"] = dict(enh_state)
-    result["geo_state"] = dict(geo_state)
-    return result
+    # Bangun ulang visual asli masa lalu tersebut
+    res = rebuild("Undo berhasil.")
+    res.update({"enh_state": dict(enh_state), "geo_state": dict(geo_state)})
+    return res
 
 @router.post("/redo")
 def redo():
     global geo_state, enh_state, redo_history, undo_history
-    # Cek histori SETELAH deklarasi global
-    if not redo_history: raise HTTPException(400, "Tidak ada riwayat untuk di-redo.")
-    import copy
+    if not redo_history: 
+        raise HTTPException(400, "Tidak ada riwayat untuk di-redo.")
     
-    # Simpan current state ke undo_history sebelum maju
+    # Masukkan state saat ini ke Undo sebelum maju ke depan
     undo_history.append((
-        copy.deepcopy(geo_state),
-        copy.deepcopy(enh_state),
-        manager.original_image.copy()
+        copy.deepcopy(geo_state), 
+        copy.deepcopy(enh_state), 
+        manager.original_image.copy() if manager.original_image else None
     ))
     
+    # Ambil snapshot masa depan dari stack Redo
     geo_snap, enh_snap, orig_snap = redo_history.pop()
+    
+    # Aplikasikan kembali
     geo_state.update(geo_snap)
     enh_state.update(enh_snap)
-    manager.original_image = orig_snap.copy()
-    
-    result = rebuild("Redo berhasil.")
-    result["enh_state"] = dict(enh_state)
-    result["geo_state"] = dict(geo_state)
-    return result
+    if orig_snap:
+        manager.original_image = orig_snap.copy()
+        
+    # Bangun ulang visualnya
+    res = rebuild("Redo berhasil.")
+    res.update({"enh_state": dict(enh_state), "geo_state": dict(geo_state)})
+    return res
 
-# ── Histogram data ─────────────────────────────────────────────
 @router.get("/histogram")
 def get_histogram():
     if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
@@ -283,22 +329,88 @@ def get_histogram():
     result['gray'] = hist_gray.tolist()
     return result
 
-# ═══════════════════════════════════════════════════════════
-# IMAGE RESTORATION
-# ═══════════════════════════════════════════════════════════
-from modules.image_restorer import ImageRestorer
+# ── Color Processing Endpoints ────────────────────────────────
+@router.post("/color/grayscale")
+def color_grayscale():
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = ColorProcessor.to_grayscale(manager.current_image)
+    return commit_restoration(img, "Grayscale diterapkan.")
 
-class GaussianParams(BaseModel): radius: float = 2.0
-class MedianParams(BaseModel): size: int = 3
-class SaltPepperParams(BaseModel): strength: int = 2
-class MeanParams(BaseModel): size: int = 3
-class UnsharpParams(BaseModel): radius: float = 2.0; percent: int = 150; threshold: int = 3
-class NoiseParams(BaseModel): amount: float = 0.05
+@router.post("/color/split")
+def color_split(params: SplitChannelParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = ColorProcessor.split_channel(manager.current_image, params.channel)
+    return commit_restoration(img, f"Channel {params.channel} diisolasi.")
 
-def commit_restoration(img: Image.Image, msg: str) -> dict:
-    manager.original_image = img.copy()
+@router.post("/color/hsv")
+def color_hsv(params: HSVParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = ColorProcessor.adjust_hsv(manager.current_image, params.hue, params.saturation, params.lightness)
+    return commit_restoration(img, "Hue/Saturation diterapkan.")
+
+@router.post("/color/preview/hsv")
+def preview_hsv(params: HSVParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = ColorProcessor.adjust_hsv(_restore_base, params.hue, params.saturation, params.lightness)
+    manager.update_current(img)
+    return {"message": "Preview HSV.", "image": img_to_b64(img), "info": manager.get_info()}
+
+# ── Fitur 7: Image Segmentation Endpoints ──────────────────────
+@router.post("/segment/threshold")
+def segment_threshold(params: ThreshParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = ImageSegmenter.threshold_segment(manager.current_image, params.threshold)
+    return commit_restoration(img, f"Thresholding biner ({params.threshold}) diterapkan.")
+
+@router.post("/segment/preview/threshold")
+def preview_threshold(params: ThreshParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = ImageSegmenter.threshold_segment(_restore_base, params.threshold)
+    manager.update_current(img)
+    return {"image": img_to_b64(img)}
+
+@router.post("/segment/edge")
+def segment_edge(params: EdgeParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = ImageSegmenter.edge_segment(manager.current_image, params.low, params.high)
+    return commit_restoration(img, "Edge-based Canny diterapkan.")
+
+@router.post("/segment/preview/edge")
+def preview_edge(params: EdgeParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = ImageSegmenter.edge_segment(_restore_base, params.low, params.high)
+    manager.update_current(img)
+    return {"image": img_to_b64(img)}
+
+@router.post("/segment/kmeans")
+def segment_kmeans(params: KmeansParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = ImageSegmenter.region_kmeans_segment(manager.current_image, params.clusters)
+    return commit_restoration(img, f"K-Means region {params.clusters} clusters diterapkan.")
+
+@router.post("/segment/preview/kmeans")
+def preview_kmeans(params: KmeansParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = ImageSegmenter.region_kmeans_segment(_restore_base, params.clusters)
+    manager.update_current(img) 
+    return {"image": img_to_b64(img)}
+
+# ── Image Restoration Endpoints ─────────────────────────────────
+@router.post("/restore/snapshot")
+def restore_snapshot():
+    global _restore_base
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    _restore_base = manager.current_image.copy()
+    return {"ok": True}
+
+@router.post("/restore/revert")
+def restore_revert():
+    global _restore_base
+    if _restore_base is None: return {"ok": True}
+    manager.update_current(_restore_base.copy())
+    global geo_state
     geo_state.update(dict(flip_h=False, flip_v=False, crop=None, scale=1.0, rotate=0.0, tx=0, ty=0))
-    return rebuild(msg)
+    return rebuild("Revert ke base.")
 
 @router.post("/restore/gaussian")
 def restore_gaussian(params: GaussianParams):
@@ -336,56 +448,125 @@ def add_noise(params: NoiseParams):
     img = ImageRestorer.add_salt_pepper_noise(manager.current_image, params.amount)
     return commit_restoration(img, f"Noise {int(params.amount*100)}% ditambahkan.")
 
-# ── Restoration snapshot/revert/preview ───────────────────────
-_restore_base = None
-
-@router.post("/restore/snapshot")
-def restore_snapshot():
-    global _restore_base
-    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
-    _restore_base = manager.current_image.copy()
-    return {"ok": True}
-
-@router.post("/restore/revert")
-def restore_revert():
-    global _restore_base
-    if _restore_base is None: return {"ok": True}
-    manager.original_image = _restore_base.copy()
-    geo_state.update(dict(flip_h=False,flip_v=False,crop=None,scale=1.0,rotate=0.0,tx=0,ty=0))
-    result = rebuild("Revert ke base.")
-    return result
-
 @router.post("/restore/preview/gaussian")
 def preview_gaussian(params: GaussianParams):
     if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
     img = ImageRestorer.gaussian_blur(_restore_base, params.radius)
     manager.update_current(img)
-    return {"message": "Preview gaussian.", "image": img_to_b64(img), "info": manager.get_info()}
+    return {"message": "Preview.", "image": img_to_b64(img), "info": manager.get_info()}
 
 @router.post("/restore/preview/median")
 def preview_median(params: MedianParams):
     if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
     img = ImageRestorer.median_filter(_restore_base, params.size)
     manager.update_current(img)
-    return {"message": "Preview median.", "image": img_to_b64(img), "info": manager.get_info()}
+    return {"message": "Preview.", "image": img_to_b64(img), "info": manager.get_info()}
 
 @router.post("/restore/preview/mean")
 def preview_mean(params: MeanParams):
     if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
     img = ImageRestorer.mean_filter(_restore_base, params.size)
     manager.update_current(img)
-    return {"message": "Preview mean.", "image": img_to_b64(img), "info": manager.get_info()}
+    return {"message": "Preview.", "image": img_to_b64(img), "info": manager.get_info()}
 
 @router.post("/restore/preview/saltpepper")
 def preview_saltpepper(params: SaltPepperParams):
     if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
     img = ImageRestorer.remove_salt_pepper(_restore_base, params.strength)
     manager.update_current(img)
-    return {"message": "Preview salt&pepper.", "image": img_to_b64(img), "info": manager.get_info()}
+    return {"message": "Preview.", "image": img_to_b64(img), "info": manager.get_info()}
 
 @router.post("/restore/preview/unsharp")
 def preview_unsharp(params: UnsharpParams):
     if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
     img = ImageRestorer.unsharp_mask(_restore_base, params.radius, params.percent, params.threshold)
     manager.update_current(img)
-    return {"message": "Preview unsharp.", "image": img_to_b64(img), "info": manager.get_info()}
+    return {"message": "Preview.", "image": img_to_b64(img), "info": manager.get_info()}
+
+
+# ═══════════════════════════════════════════════════════════
+# FITUR 8: IMAGE COMPRESSION ENDPOINTS
+# ═══════════════════════════════════════════════════════════
+class CompressParams(BaseModel):
+    quality: int
+
+@router.post("/compress/preview")
+def compress_preview(params: CompressParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    # Gunakan _restore_base sebagai landasan preview agar pergeseran slider bersifat real-time & non-destructive
+    global _restore_base
+    if _restore_base is None:
+        _restore_base = manager.current_image.copy()
+        
+    comp_img, bytes_size, ratio = ImageCompressor.compress_jpeg_simulation(_restore_base, params.quality)
+    manager.update_current(comp_img)
+    
+    # Konversi ukuran bytes menjadi KB yang mudah dibaca manusia
+    size_kb = round(bytes_size / 1024, 2)
+    return {
+        "image": img_to_b64(comp_img),
+        "size_kb": f"{size_kb} KB",
+        "ratio": f"{ratio}%"
+    }
+
+@router.post("/compress/save")
+def compress_save(params: CompressParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    global _restore_base
+    base_img = _restore_base if _restore_base else manager.current_image.copy()
+    
+    comp_img, _, _ = ImageCompressor.compress_jpeg_simulation(base_img, params.quality)
+    
+    # Kunci hasilnya ke sistem Undo/Redo history
+    return commit_restoration(comp_img, f"Kompresi JPEG kualitas {params.quality}% disimpan.")
+
+# ═══════════════════════════════════════════════════════════
+# FITUR 5: BINARY & EDGE PROCESSING ENDPOINTS
+# ═══════════════════════════════════════════════════════════
+class EdgeParams(BaseModel):
+    method: str
+    p1: int = 50
+    p2: int = 150
+
+class MorphParams(BaseModel):
+    operation: str
+    size: int = 3
+
+@router.post("/binary/threshold")
+def binary_threshold_apply(params: ThreshParams): # Menggunakan ThreshParams yang sudah ada
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = BinaryEdgeProcessor.apply_threshold(manager.current_image, params.threshold)
+    return commit_restoration(img, f"Thresholding biner ({params.threshold}) sukses.")
+
+@router.post("/binary/preview/threshold")
+def binary_threshold_preview(params: ThreshParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = BinaryEdgeProcessor.apply_threshold(_restore_base, params.threshold)
+    manager.update_current(img)
+    return {"image": img_to_b64(img)}
+
+@router.post("/binary/edge")
+def binary_edge_apply(params: EdgeParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = BinaryEdgeProcessor.edge_detection(manager.current_image, params.method, params.p1, params.p2)
+    return commit_restoration(img, f"Edge Detection {params.method.upper()} sukses.")
+
+@router.post("/binary/preview/edge")
+def binary_edge_preview(params: EdgeParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = BinaryEdgeProcessor.edge_detection(_restore_base, params.method, params.p1, params.p2)
+    manager.update_current(img)
+    return {"image": img_to_b64(img)}
+
+@router.post("/binary/morph")
+def binary_morph_apply(params: MorphParams):
+    if not manager.has_image(): raise HTTPException(400, "Belum ada gambar.")
+    img = BinaryEdgeProcessor.morphology(manager.current_image, params.operation, params.size)
+    return commit_restoration(img, f"Morfologi {params.operation} size {params.size} sukses.")
+
+@router.post("/binary/preview/morph")
+def binary_morph_preview(params: MorphParams):
+    if not manager.has_image() or _restore_base is None: raise HTTPException(400, "Belum ada gambar.")
+    img = BinaryEdgeProcessor.morphology(_restore_base, params.operation, params.size)
+    manager.update_current(img)
+    return {"image": img_to_b64(img)}

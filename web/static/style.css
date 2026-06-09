@@ -94,6 +94,7 @@ header {
   display: flex !important; 
   align-items: center !important; 
   gap: 8px !important; 
+  margin-left: 32px !important;
 }
 
 /* ==========================================================================
@@ -126,11 +127,11 @@ header {
   background: var(--cyan-dim) !important;
 }
 
-/* Kotak List Menu Dropdown */
+/* Ganti blok .file-menu-dropdown di style.css kamu menjadi seperti ini: */
 .file-menu-dropdown {
-  display: none !important; /* Tersembunyi sebelum di-hover */
+  display: none !important;
   position: absolute !important;
-  left: 0 !important;
+  right: 0 !important; /* Diubah dari left: 0 agar dropdown mekar ke kiri */
   top: 100% !important;
   min-width: 220px !important;
   background: var(--surface) !important;
@@ -139,7 +140,7 @@ header {
   z-index: 9999 !important;
   padding: 4px 0 !important;
   margin-top: 2px !important;
-  flex-direction: column !important; /* Susun item tegak ke bawah */
+  flex-direction: column !important;
 }
 
 /* Tampilkan isi dropdown saat di-hover kursor */
@@ -230,17 +231,19 @@ main {
   overflow: hidden;
   position: relative;
   z-index: 1;
-  align-items: flex-start;
+  align-items: stretch;
+  height: calc(100% - 48px);
 }
 
 .canvas-area {
   flex: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   padding: 16px;
   gap: 12px;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
+  height: 100%;
 }
 
 .panel {
@@ -249,6 +252,7 @@ main {
   flex-direction: column;
   gap: 6px;
   min-width: 280px;
+  height: 100%;
 }
 
 .panel-header {
@@ -278,7 +282,8 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 220px;
+  flex: 1;
+  min-height: 0;
 }
 .panel-img-wrap::before,
 .panel-img-wrap::after {
@@ -440,6 +445,7 @@ main {
 
 input[type="range"] {
   flex: 1; -webkit-appearance: none;
+  appearance: none;
   height: 3px; background: var(--surf3);
   border: none; outline: none; cursor: pointer;
 }
@@ -613,3 +619,113 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.25); }
 
 .restore-params { display: none; }
 .restore-params.active { display: block; }
+
+/* ═══════════════════════════════════════════════
+   HSV MODAL CUSTOM STYLING (DRAGGABLE & COLOR SLIDERS)
+═══════════════════════════════════════════════ */
+/* Matikan background gelap bawaan modal agar gambar workspace tetap terang */
+#hsv-modal {
+  background: transparent !important; 
+  pointer-events: none; /* Memungkinkan klik tembus ke belakang jika meleset */
+}
+
+/* Hidupkan kembali interaksi di area kotak modalnya saja */
+#hsv-box {
+  pointer-events: auto; 
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 15px 50px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,207,255,0.2) !important;
+}
+
+/* Kursor tangan indikator drag pada area header (judul popup) */
+#hsv-header {
+  cursor: grab;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+#hsv-header:active {
+  cursor: grabbing;
+}
+
+/* Custom Track Slider Hue & Saturation (Menimpa default) */
+.hsv-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px !important;
+  border-radius: 2px !important;
+  border: 1px solid #333;
+  outline: none;
+  margin-top: 4px;
+}
+
+/* Pewarnaan Gradasi pada masing-masing slider */
+#s-hue {
+  background: linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000) !important;
+}
+#s-sat {
+  background: linear-gradient(to right, #808080, #ff0000) !important;
+}
+#s-light {
+  background: linear-gradient(to right, #000000, #ffffff) !important;
+}
+
+/* Membentuk Tuas (Thumb) Slider Segi Lima menunjuk ke atas */
+.hsv-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px !important;
+  height: 14px !important;
+  background: #e0e0e0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  /* Bentuk Polygon memotong kotak menjadi segi lima tajam */
+  clip-path: polygon(50% 0%, 100% 30%, 100% 100%, 0% 100%, 0% 30%);
+  transform: translateY(6px); /* Menggeser tuas agar berada menggantung di bawah garis */
+  cursor: pointer;
+  box-shadow: none !important;
+}
+
+.hsv-slider::-webkit-slider-thumb:hover {
+  background: #ffffff !important;
+  transform: translateY(6px) scale(1.1); /* Sedikit membesar saat disorot */
+}
+
+/* ═══════════════════════════════════════════════
+   FLOATING WINDOW POPUPS & TABS OPTIMIZATION
+═══════════════════════════════════════════════ */
+.hist-modal {
+  background: transparent !important;
+  pointer-events: none;
+}
+
+.hist-box {
+  pointer-events: auto;
+  position: absolute;
+  top: 55%;
+  left: 45%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 0 1px rgba(0,207,255,0.15) !important;
+}
+
+#hist-box {
+  top: 70%;
+  left: 25%; /* Memposisikan awal panel histogram melayang di kiri bawah kanvas */
+  transform: none;
+}
+
+#enhance-box {
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.info-badge {
+  background: rgba(0, 207, 255, 0.05);
+  border: 1px dashed rgba(0, 207, 255, 0.3);
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--cyan);
+  text-align: center;
+  margin-bottom: 12px;
+}

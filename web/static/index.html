@@ -10,7 +10,6 @@
 </head>
 <body>
 
-  <!-- HEADER -->
   <header>
     <div class="logo">
       <div class="logo-dots">
@@ -20,6 +19,7 @@
       </div>
       <div class="logo-text">MINI<span>PS</span></div>
     </div>
+    
     <nav class="toolbar">
       <div class="file-menu-container">
         <button class="file-menu-btn" type="button">File ▾</button>
@@ -30,6 +30,7 @@
           </label>
           <button class="file-menu-item" type="button" id="btn-reset">↺ Reset ke Awal</button>
           <a class="file-menu-item" id="btn-download" href="/api/download" download="result.png">↓ Unduh Gambar</a>
+          <button class="file-menu-item" type="button" id="btn-open-compress" style="color: #ffaa00;">🗜 Export / Compress Image...</button>
           <button class="file-menu-item btn-danger-item" type="button" id="btn-clear">✕ Hapus Gambar</button>
         </div>
       </div>
@@ -45,18 +46,39 @@
             <span>↪ Redo</span>
             <span class="shortcut-text">Shift+Ctrl+Z</span>
           </button>
+          <div style="border-top: 1px solid var(--border); margin: 4px 0;"></div>
+          <button class="file-menu-item" type="button" id="btn-open-seg" style="color: #00ff9f;">⬡ Segmentation Tools...</button>
+        </div>
+      </div>
+
+      <div class="file-menu-container">
+        <button class="file-menu-btn" type="button">Image ▾</button>
+        <div class="file-menu-dropdown">
+          <button class="file-menu-item" type="button" id="btn-grayscale">◧ Mode Grayscale</button>
+          <button class="file-menu-item" type="button" id="btn-open-hsv">◐ Hue/Saturation...</button>
+          <button class="file-menu-item" type="button" id="btn-open-enhance" style="color: #00cfff;">🎛 Tune Enhancement...</button>
+          <button class="file-menu-item btn-danger-item" type="button" id="btn-toggle-hist">📊  Histogram</button>
+          <button class="file-menu-item" type="button" id="btn-split-r">🟥 Split Channel Red</button>
+          <button class="file-menu-item" type="button" id="btn-split-g">🟩 Split Channel Green</button>
+          <button class="file-menu-item" type="button" id="btn-split-b">🟦 Split Channel Blue</button>
+          <div style="border-top: 1px solid var(--border); margin: 4px 0;"></div>
+          <button class="file-menu-item" type="button" id="btn-open-restoration" style="color: #ff44cc;">✨ Restoration Tools...</button>
+        </div>
+      </div>
+
+      <div class="file-menu-container">
+        <button class="file-menu-btn" type="button">Transform ▾</button>
+        <div class="file-menu-dropdown">
+          <button class="file-menu-item" type="button" id="btn-open-transform">❖ Geometric Tools...</button>
         </div>
       </div>
     </nav>
+    <div style="flex:1;"></div>
+    <div class="status-bar" id="status-bar" style="margin: 0; min-height: unset; padding: 4px 8px; border: none; font-size: 10px; background: transparent;">Siap.</div>
   </header>
 
-  <!-- MAIN -->
   <main>
-
-    <!-- LEFT: Canvas panels -->
     <section class="canvas-area">
-
-      <!-- BEFORE -->
       <div class="panel">
         <div class="panel-header">
           <span class="panel-label">BEFORE</span>
@@ -73,14 +95,13 @@
 
       <div class="divider-dot-v"></div>
 
-      <!-- AFTER -->
       <div class="panel">
         <div class="panel-header">
           <span class="panel-label" id="after-label">AFTER</span>
         </div>
         <div class="panel-img-wrap" id="after-wrap">
           <img id="img-after" alt="" />
-          <!-- Crop overlay -->
+          
           <div id="crop-overlay" class="crop-overlay" hidden>
             <div id="crop-mask-top"    class="crop-mask"></div>
             <div id="crop-mask-left"   class="crop-mask"></div>
@@ -97,89 +118,44 @@
               <div class="crop-handle" data-pos="r"></div>
             </div>
           </div>
-          <!-- Resize overlay -->
+          
           <div id="resize-overlay" class="resize-overlay" hidden>
             <div class="resize-handle" data-pos="r"></div>
             <div class="resize-handle" data-pos="b"></div>
             <div class="resize-handle" data-pos="br"></div>
           </div>
+          
           <div class="loading-overlay" id="loading">
             <div class="spinner"></div>
           </div>
         </div>
       </div>
-
     </section>
+  </main>
 
-    <!-- RIGHT: Controls -->
-    <aside class="controls">
-
-      <div class="tabs">
-        <button class="tab active" data-tab="enhancement">Enhancement</button>
-        <button class="tab" data-tab="geometric">Geometric</button>
-        <button class="tab" data-tab="restoration">Restoration</button>
+  <div id="transform-modal" class="hist-modal" hidden>
+    <div class="hist-box" id="transform-box" style="width: 380px;">
+      <div class="hist-header" id="transform-header">
+        <span class="hist-title">GEOMETRIC TRANSFORM</span>
+        <button class="hist-close" id="transform-close">✕</button>
       </div>
-
-      <!-- ══ ENHANCEMENT TAB ══ -->
-      <div class="tab-content active" id="tab-enhancement">
-
-        <div class="control-group">
-          <div class="group-label">TONE</div>
-          <div class="slider-row">
-            <label>Brightness</label>
-            <div class="slider-wrap">
-              <input type="range" id="s-brightness" min="0" max="200" value="100" />
-              <span class="slider-val" id="v-brightness">100</span>
-            </div>
-          </div>
-          <div class="slider-row">
-            <label>Contrast</label>
-            <div class="slider-wrap">
-              <input type="range" id="s-contrast" min="0" max="200" value="100" />
-              <span class="slider-val" id="v-contrast">100</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="control-group">
-          <div class="group-label">DETAIL</div>
-          <div class="slider-row">
-            <label>Sharpen</label>
-            <div class="slider-wrap">
-              <input type="range" id="s-sharpen" min="100" max="500" value="100" />
-              <span class="slider-val" id="v-sharpen">100</span>
-            </div>
-          </div>
-          <div class="slider-row">
-            <label>Blur</label>
-            <div class="slider-wrap">
-              <input type="range" id="s-blur" min="0" max="20" value="0" />
-              <span class="slider-val" id="v-blur">0</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="action-group">
-          <button class="btn-apply" id="btn-apply">✓ Terapkan</button>
-          <button class="btn-secondary" id="btn-histeq">⊞ Histogram EQ</button>
-          <button class="btn-ghost-sm" id="btn-reset-sliders">↺ Reset Slider</button>
-        </div>
-
-      </div>
-
-      <!-- ══ GEOMETRIC TAB ══ -->
-      <div class="tab-content" id="tab-geometric">
-
+      <div style="max-height: 400px; overflow-y: auto; padding-right: 5px; display: flex; flex-direction: column; gap: 10px;">
         <div class="control-group">
           <div class="group-label">ROTATE</div>
           <div class="slider-row">
             <label>Angle</label>
             <div class="slider-wrap">
               <input type="range" id="s-rotate" min="0" max="360" value="0" />
-              <span class="slider-val" id="v-rotate">0°</span>
+              <input type="number" id="n-rotate" min="0" max="360" value="0" class="val-input" style="width: 65px;" />
+              <span class="slider-unit">°</span>
             </div>
           </div>
-          <button class="btn-ghost-sm" id="btn-rotate-reset">↺ Reset</button>
+          <div class="btn-pair" style="gap: 4px; margin-top: 4px;">
+            <button class="btn-secondary" id="btn-rot-90-ccw" style="font-size: 11px; padding: 6px 4px; flex: 1;">↺ -90°</button>
+            <button class="btn-secondary" id="btn-rot-90-cw" style="font-size: 11px; padding: 6px 4px; flex: 1;">↻ +90°</button>
+            <button class="btn-secondary" id="btn-rot-180" style="font-size: 11px; padding: 6px 4px; flex: 1;">⇄ 180°</button>
+          </div>
+          <button class="btn-ghost-sm" id="btn-rotate-reset" style="margin-top: 4px;">↺ Reset</button>
         </div>
 
         <div class="control-group">
@@ -195,8 +171,8 @@
           <div class="slider-row">
             <label>Scale</label>
             <div class="slider-wrap">
-              <input type="range" id="s-scale" min="10" max="1000" value="100" /><span class="slider-val" id="v-scale">100%</span>
-              <input type="number" id="n-scale" min="10" max="2000" value="100" class="val-input" />
+              <input type="range" id="s-scale" min="0" max="100" value="100" /><span class="slider-val" id="v-scale">100%</span>
+              <input type="number" id="n-scale" min="0" max="100" value="100" class="val-input" />
               <span class="slider-unit">%</span>
             </div>
           </div>
@@ -206,14 +182,8 @@
         <div class="control-group">
           <div class="group-label">RESIZE</div>
           <div class="input-row">
-            <div class="input-field">
-              <label>W (px)</label>
-              <input type="number" id="n-width" min="1" max="9999" />
-            </div>
-            <div class="input-field">
-              <label>H (px)</label>
-              <input type="number" id="n-height" min="1" max="9999" />
-            </div>
+            <div class="input-field"><label>W (px)</label><input type="number" id="n-width" min="1" max="9999" /></div>
+            <div class="input-field"><label>H (px)</label><input type="number" id="n-height" min="1" max="9999" /></div>
           </div>
           <div class="btn-pair">
             <button class="btn-secondary" id="btn-resize">⤢ Terapkan</button>
@@ -234,27 +204,121 @@
           <div class="group-label">TRANSLATION</div>
           <button class="btn-secondary" id="btn-drag-mode">⤳ Mode Geser</button>
           <div class="input-row">
-            <div class="input-field">
-              <label>X (px)</label>
-              <input type="number" id="n-tx" value="0" />
-            </div>
-            <div class="input-field">
-              <label>Y (px)</label>
-              <input type="number" id="n-ty" value="0" />
-            </div>
+            <div class="input-field"><label>X (px)</label><input type="number" id="n-tx" value="0" /></div>
+            <div class="input-field"><label>Y (px)</label><input type="number" id="n-ty" value="0" /></div>
           </div>
           <button class="btn-ghost-sm" id="btn-translate">Terapkan angka</button>
         </div>
-
       </div>
+    </div>
+  </div>
 
+  <div id="segmentation-modal" class="hist-modal" hidden>
+    <div class="hist-box" id="segmentation-box" style="width: 400px;">
+      <div class="hist-header" id="segmentation-header">
+        <span class="hist-title">SEGMENTATION TOOLS</span>
+        <button class="hist-close" id="segmentation-close">✕</button>
+      </div>
+      <div id="tab-segmentation" style="max-height: 400px; overflow-y: auto; padding-right: 5px; display: flex; flex-direction: column; gap: 10px;">
+        <div class="info-badge">Pilih algoritma ekstraksi & segmentasi objek:</div>
+        
+        <div class="control-group">
+          <div class="group-label">ALGORITMA SEGMENTASI & EDGE</div>
+          <div class="restore-filter-list" style="max-height: 160px; overflow-y: auto;">
+            <button class="restore-filter-btn active" data-seg="threshold">Threshold-Based</button>
+            <button class="restore-filter-btn" data-seg="kmeans">Region K-Means</button>
+            <button class="restore-filter-btn" data-seg="edge_canny">Canny Edge</button>
+            <button class="restore-filter-btn" data-seg="edge_sobel">Sobel Edge</button>
+            <button class="restore-filter-btn" data-seg="edge_prewitt">Prewitt Edge</button>
+            <button class="restore-filter-btn" data-seg="edge_robert">Robert Edge</button>
+            <button class="restore-filter-btn" data-seg="edge_laplacian">Laplacian</button>
+            <button class="restore-filter-btn" data-seg="edge_log">Laplacian of Gaussian</button>
+            <button class="restore-filter-btn" data-seg="morph_erosion">Morphology: Erosion</button>
+            <button class="restore-filter-btn" data-seg="morph_dilation">Morphology: Dilation</button>
+          </div>
+        </div>
 
-            <!-- ══ RESTORATION TAB ══ -->
-      <div class="tab-content" id="tab-restoration">
+        <div class="restore-params active" id="sp-threshold">
+          <div class="control-group">
+            <div class="group-label">THRESHOLD BINARY IMAGE</div>
+            <div class="slider-row">
+              <label>Ambang Batas</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-seg-thresh" min="0" max="255" value="127" />
+                <span class="slider-val" id="v-seg-thresh">127</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
+        <div class="restore-params" id="sp-kmeans">
+          <div class="control-group">
+            <div class="group-label">REGIONAL CLUSTERS (K)</div>
+            <div class="slider-row">
+              <label>Jumlah Kluster</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-seg-k" min="2" max="10" value="3" />
+                <span class="slider-val" id="v-seg-k">3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="restore-params" id="sp-edge_canny">
+          <div class="control-group">
+            <div class="group-label">CANNY THRESHOLD BOUNDS</div>
+            <div class="slider-row">
+              <label>Min Threshold</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-canny-low" min="0" max="200" value="50" />
+                <span class="slider-val" id="v-canny-low">50</span>
+              </div>
+            </div>
+            <div class="slider-row" style="margin-top:10px;">
+              <label>Max Threshold</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-canny-high" min="50" max="400" value="150" />
+                <span class="slider-val" id="v-canny-high">150</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="restore-params" id="sp-edge_fixed">
+          <div class="info-badge" style="color: #a6e3a1; border-color: rgba(166,227,161,0.2);">
+            Metode ini menggunakan Matriks Kernel 3×3 standar konvolusi otomatis.
+          </div>
+        </div>
+
+        <div class="restore-params" id="sp-morph">
+          <div class="control-group">
+            <div class="group-label">KERNEL STRUCTURING ELEMENT</div>
+            <div class="slider-row">
+              <label>Kernel Size</label>
+              <div class="slider-wrap">
+                <input type="range" id="s-morph-size" min="1" max="5" value="1" />
+                <span class="slider-val" id="v-morph-size">3×3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-group" style="flex-direction: row; justify-content: space-between; margin-top: 10px;">
+          <button class="btn-ghost-sm" id="btn-segment-preview">↺ Reset Preview</button>
+          <button class="btn-apply" id="btn-segment-apply">✓ Terapkan Efek</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="restoration-modal" class="hist-modal" hidden>
+    <div class="hist-box" id="restoration-box" style="width: 400px;">
+      <div class="hist-header" id="restoration-header">
+        <span class="hist-title">RESTORATION TOOLS</span>
+        <button class="hist-close" id="restoration-close">✕</button>
+      </div>
+      <div id="tab-restoration" style="max-height: 400px; overflow-y: auto; padding-right: 5px; display: flex; flex-direction: column; gap: 10px;">
         <div class="info-badge">Pilih filter → geser slider → Terapkan</div>
-
-        <!-- Filter selector -->
         <div class="control-group">
           <div class="group-label">PILIH FILTER</div>
           <div class="restore-filter-list">
@@ -266,122 +330,124 @@
           </div>
         </div>
 
-        <!-- Gaussian -->
         <div class="restore-params active" id="rp-gaussian">
-          <div class="control-group">
-            <div class="group-label">GAUSSIAN BLUR</div>
-            <div class="slider-row">
-              <label>Radius</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-gauss" min="1" max="20" value="4" step="1" />
-                <span class="slider-val" id="v-gauss">2.0</span>
-              </div>
-            </div>
-          </div>
+          <div class="control-group"><div class="group-label">GAUSSIAN BLUR</div><div class="slider-row"><label>Radius</label><div class="slider-wrap"><input type="range" id="s-gauss" min="1" max="20" value="4" /><span class="slider-val" id="v-gauss">2.0</span></div></div></div>
         </div>
-
-        <!-- Median -->
         <div class="restore-params" id="rp-median">
-          <div class="control-group">
-            <div class="group-label">MEDIAN FILTER</div>
-            <div class="slider-row">
-              <label>Kernel size</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-median" min="1" max="4" value="1" step="1" />
-                <span class="slider-val" id="v-median">3</span>
-              </div>
-            </div>
-          </div>
+          <div class="control-group"><div class="group-label">MEDIAN FILTER</div><div class="slider-row"><label>Kernel size</label><div class="slider-wrap"><input type="range" id="s-median" min="1" max="4" value="1" /><span class="slider-val" id="v-median">3</span></div></div></div>
         </div>
-
-        <!-- Mean -->
         <div class="restore-params" id="rp-mean">
-          <div class="control-group">
-            <div class="group-label">MEAN FILTER</div>
-            <div class="slider-row">
-              <label>Kernel size</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-mean" min="1" max="3" value="1" step="1" />
-                <span class="slider-val" id="v-mean">3</span>
-              </div>
-            </div>
-          </div>
+          <div class="control-group"><div class="group-label">MEAN FILTER</div><div class="slider-row"><label>Kernel size</label><div class="slider-wrap"><input type="range" id="s-mean" min="1" max="3" value="1" /><span class="slider-val" id="v-mean">3</span></div></div></div>
         </div>
-
-        <!-- Salt & Pepper -->
         <div class="restore-params" id="rp-saltpepper">
           <div class="control-group">
             <div class="group-label">SALT & PEPPER</div>
-            <div class="slider-row">
-              <label>Remove strength</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-sp-remove" min="1" max="3" value="2" step="1" />
-                <span class="slider-val" id="v-sp-remove">2</span>
-              </div>
-            </div>
-            <div class="slider-row">
-              <label>Add noise (demo)</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-sp-add" min="1" max="20" value="5" step="1" />
-                <span class="slider-val" id="v-sp-add">5%</span>
-              </div>
-            </div>
+            <div class="slider-row"><label>Remove strength</label><div class="slider-wrap"><input type="range" id="s-sp-remove" min="1" max="3" value="2" /><span class="slider-val" id="v-sp-remove">2</span></div></div>
+            <div class="slider-row"><label>Add noise</label><div class="slider-wrap"><input type="range" id="s-sp-add" min="1" max="20" value="5" /><span class="slider-val" id="v-sp-add">5%</span></div></div>
             <button class="btn-ghost-sm" id="btn-sp-add">+ Tambah Noise</button>
           </div>
         </div>
-
-        <!-- Unsharp -->
         <div class="restore-params" id="rp-unsharp">
           <div class="control-group">
             <div class="group-label">UNSHARP MASK</div>
-            <div class="slider-row">
-              <label>Radius</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-unsharp-r" min="1" max="10" value="2" step="1" />
-                <span class="slider-val" id="v-unsharp-r">2</span>
-              </div>
-            </div>
-            <div class="slider-row">
-              <label>Strength %</label>
-              <div class="slider-wrap">
-                <input type="range" id="s-unsharp-p" min="50" max="300" value="150" step="10" />
-                <span class="slider-val" id="v-unsharp-p">150</span>
-              </div>
-            </div>
+            <div class="slider-row"><label>Radius</label><div class="slider-wrap"><input type="range" id="s-unsharp-r" min="1" max="10" value="2" /><span class="slider-val" id="v-unsharp-r">2</span></div></div>
+            <div class="slider-row"><label>Strength %</label><div class="slider-wrap"><input type="range" id="s-unsharp-p" min="50" max="300" value="150" step="10" /><span class="slider-val" id="v-unsharp-p">150</span></div></div>
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="action-group">
-          <button class="btn-apply" id="btn-restore-apply">✓ Terapkan</button>
+        <div class="action-group" style="flex-direction: row; justify-content: space-between; margin-top: 10px;">
           <button class="btn-ghost-sm" id="btn-restore-preview">↺ Preview ulang</button>
+          <button class="btn-apply" id="btn-restore-apply">✓ Terapkan</button>
         </div>
-
       </div>
+    </div>
+  </div>
 
-      <div class="status-bar" id="status-bar">Siap.</div>
-    </aside>
+  <div id="enhance-modal" class="hist-modal" hidden>
+    <div class="hist-box" id="enhance-box" style="width: 360px;">
+      <div class="hist-header" id="enhance-header">
+        <span class="hist-title">IMAGE ENHANCEMENT</span>
+        <button class="hist-close" id="enhance-close">✕</button>
+      </div>
+      <div class="control-group" style="background: transparent; border: none; padding: 0; display:flex; flex-direction:column; gap:12px;">
+        <div class="slider-row"><label style="color: #cdd6f4;">Brightness:</label><div class="slider-wrap"><input type="range" id="s-brightness" min="0" max="200" value="100" /><span class="slider-val" id="v-brightness" style="width:36px; text-align:right;">100</span></div></div>
+        <div class="slider-row"><label style="color: #cdd6f4;">Contrast:</label><div class="slider-wrap"><input type="range" id="s-contrast" min="0" max="200" value="100" /><span class="slider-val" id="v-contrast" style="width:36px; text-align:right;">100</span></div></div>
+        <div class="slider-row"><label style="color: #cdd6f4;">Sharpen:</label><div class="slider-wrap"><input type="range" id="s-sharpen" min="100" max="500" value="100" /><span class="slider-val" id="v-sharpen" style="width:36px; text-align:right;">100</span></div></div>
+        <div class="slider-row"><label style="color: #cdd6f4;">Blur:</label><div class="slider-wrap"><input type="range" id="s-blur" min="0" max="20" value="0" /><span class="slider-val" id="v-blur" style="width:36px; text-align:right;">0</span></div></div>
+      </div>
+      <div class="action-group" style="margin-top: 15px; flex-direction: row; justify-content: space-between;">
+        <button class="btn-secondary" id="btn-histeq" style="font-size:11px; padding:6px 10px;">📊 Hist EQ</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-ghost-sm" id="btn-enhance-cancel">Batal</button>
+          <button class="btn-apply" id="btn-enhance-ok">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  </main>
+  <div id="hsv-modal" class="hist-modal" hidden>
+    <div class="hist-box" id="hsv-box" style="width: 360px;">
+      <div class="hist-header" id="hsv-header">
+        <span class="hist-title">HUE / SATURATION</span>
+        <button class="hist-close" id="hsv-close">✕</button>
+      </div>
+      <div class="control-group" style="background: transparent; border: none; padding: 0;">
+        <div class="slider-row"><label style="color: #cdd6f4;">Hue:</label><div class="slider-wrap"><input type="range" id="s-hue" class="hsv-slider" min="-180" max="180" value="0" /><span class="slider-val" id="v-hue" style="width:36px; text-align:right;">0</span></div></div>
+        <div class="slider-row" style="margin-top: 15px;"><label style="color: #cdd6f4;">Saturation:</label><div class="slider-wrap"><input type="range" id="s-sat" class="hsv-slider" min="-100" max="100" value="0" /><span class="slider-val" id="v-sat" style="width:36px; text-align:right;">0</span></div></div>
+        <div class="slider-row" style="margin-top: 15px;"><label style="color: #cdd6f4;">Lightness:</label><div class="slider-wrap"><input type="range" id="s-light" class="hsv-slider" min="-100" max="100" value="0" /><span class="slider-val" id="v-light" style="width:36px; text-align:right;">0</span></div></div>
+      </div>
+      <div class="action-group" style="margin-top: 15px; flex-direction: row; justify-content: flex-end; gap: 10px;">
+        <button class="btn-ghost-sm" id="btn-hsv-cancel" style="width: 80px;">Batal</button>
+        <button class="btn-apply" id="btn-hsv-ok" style="width: 80px;">OK</button>
+      </div>
+    </div>
+  </div>
 
-
-  <!-- HISTOGRAM MODAL -->
   <div id="hist-modal" class="hist-modal" hidden>
-    <div class="hist-box">
-      <div class="hist-header">
-        <span class="hist-title">HISTOGRAM</span>
+    <div class="hist-box" id="hist-box" style="width: 440px;">
+      <div class="hist-header" id="hist-header">
+        <span class="hist-title">REALTIME HISTOGRAM ANALYSIS</span>
         <button class="hist-close" id="hist-close">✕</button>
       </div>
-      <div class="hist-tabs">
+      <div class="hist-tabs" style="margin-bottom:8px;">
         <button class="hist-tab active" data-ch="rgb">RGB</button>
         <button class="hist-tab" data-ch="r">R</button>
         <button class="hist-tab" data-ch="g">G</button>
         <button class="hist-tab" data-ch="b">B</button>
         <button class="hist-tab" data-ch="gray">Gray</button>
       </div>
-      <canvas id="hist-canvas" width="500" height="200"></canvas>
+      <canvas id="hist-canvas" width="400" height="180"></canvas>
     </div>
   </div>
+
+  <div id="compress-modal" class="hist-modal" hidden>
+    <div class="hist-box" id="compress-box" style="width: 380px;">
+      <div class="hist-header" id="compress-header">
+        <span class="hist-title">JPEG COMPRESSION SIMULATION</span>
+        <button class="hist-close" id="compress-close">✕</button>
+      </div>
+      
+      <div class="control-group" style="background: transparent; border: none; padding: 0; display:flex; flex-direction:column; gap:12px;">
+        <div class="info-badge" id="compress-info-badge" style="background: rgba(255,170,0,0.05); border-color: rgba(255,170,0,0.3); color: #ffaa00;">
+          Size: -- KB | Savings Ratio: --
+        </div>
+        
+        <div class="slider-row">
+          <label style="color: #cdd6f4;">JPEG Quality:</label>
+          <div class="slider-wrap">
+            <input type="range" id="s-compress-quality" min="1" max="100" value="80" />
+            <span class="slider-val" id="v-compress-quality" style="width:36px; text-align:right;">80%</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="action-group" style="margin-top: 20px; flex-direction: row; justify-content: flex-end; gap: 10px;">
+        <button class="btn-ghost-sm" id="btn-compress-cancel" style="width: 90px;">Batal</button>
+        <button class="btn-apply" id="btn-compress-ok" style="width: 110px; background: #ffaa00; border-color: #ffaa00; color: #11111b;">Save Image</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>
